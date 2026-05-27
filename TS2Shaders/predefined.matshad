@@ -1,0 +1,794 @@
+#
+# Pre-defined material definitions and materials.
+#
+
+
+# Handy vertex program for taking a composition-pass
+# quad and mapping it to the screen. Also produces
+# texture coordinates suitable for a cube environment map.
+define ScreenQuadVertexProgram()
+
+   shaderProgram -target vertexProgram -method assemble
+		
+		bindConstants 1 -bindingID clipToCamera   -constantCount 4
+		bindConstants 5 -bindingID cameraToGlobal -constantCount 3
+		
+      shaderSource
+		 vs_1_1
+         def c0, 1, 1, 1, 1
+
+         dcl_position0 v0
+
+         ; map positions to screen-space
+         mov r0.xy, v0
+         mov r0.zw, c0
+
+         mov oPos, r0
+         
+         ; back project to world space to get our view ray.
+         m4x4 r1, r0, c1
+         m3x3 r0, r1, c5
+
+         ; this is what we'll feed to the cube map.
+         mov oT0, r0
+      endShaderSource
+      
+   end
+   
+enddef
+
+
+
+# This version stretches a 2D texture over the screen.
+define ScreenTextureQuadVertexProgram()
+	
+	shaderProgram -target vertexProgram -method assemble
+
+		shaderSource
+			vs_1_1
+			def c0, 0.5, -0.5, 1, 1
+			         
+			dcl_position0 v0
+	         
+			; map positions to screen-space
+			mov oPos.xy, v0
+			mov oPos.zw, c0
+
+			; x = v0.x * 0.5 + 0.5
+			; y = v0.y * -0.5 + 0.5
+			
+			mad oT0.xy, c0.xy, v0, c0.xx
+
+	      endShaderSource
+	end
+   
+enddef
+
+
+# SkyboxTestMaterial
+#   Creates a pass that will map a cube map onto
+#   a composition-pass quad.
+
+# Name of skybox texture.
+set skyboxCubeTexture none
+
+define SkyboxCompositionPassMaterial()
+   material
+      # set a later shader layer so that most of the color/z has already been committed
+      shader -layer (-100)
+         vertexFormatPred position 0 true
+         
+         create DetermineHardwareSupport()
+
+         pass -renderEachFrame
+            shaderProgram -target vertexProgram -method assemble            
+                 
+               bindConstants 1 -bindingID clipToCamera -constantCount 4
+               bindConstants 5 -bindingID cameraToGlobal -constantCount 3
+               
+               shaderSource
+					vs_1_1
+					def c0, 1,1,1,1
+					dcl_position0 v0
+   
+                  ; map positions to screen-space
+					mov r0.xy, v0
+					mov r0.zw, c0
+                    mov oPos, r0
+   
+                  ; back project to world space to get our view ray.
+					m4x4 r1, r0, c1
+					m3x3 r0, r1, c5
+   
+                  ; this is what we'll feed to the cube map.
+					mov oT0.xyz, r0
+               endShaderSource
+            end
+
+            cullmode none
+            depthTest true -enableDepthWrite false
+
+            alphaBlend srcFactor(one) add dstFactor(zero)
+            
+            colorScalar(0.3, 0.3, 0.65, 1.0)
+
+            stage
+               if ($cubeMapSupport)
+                  texture $skyboxCubeTexture
+                  textureMIPFilterHint disabled
+
+                  textureAddressing clamp clamp clamp
+                  textureBlend select(texture) select(texture)
+               else
+                  textureBlend select(colorScalar) select(colorScalar)
+               endif
+            end
+         end
+      end
+   end
+enddef
+
+
+# material for bounding boxes when they're displayed
+define BoundGeomMaterial()
+   material
+      shader -layer 9999
+         vertexFormatPred position     0 true
+         vertexFormatPred blendweights 0 (hasVertexFormat(blendindices, 0))
+
+		create SetupSkinningStateAndPredicates()
+		create SetupMorphingStateAndPredicates()
+
+         # draw as 'hidden lines'
+         # first pass initializes renders primitives as opaque triangles
+         # the second pass renders the same primitives again in wireframe mode
+         pass
+            create PreprocessVertexShader()
+
+            shaderProgram
+               if ($doSkinning)
+                  bindConstants 0 -bindingID cameraToClip -constantCount 4
+               else
+                  bindConstants 0 -bindingID geomToClip -constantCount 4
+               endif
+
+               shaderSource
+                  vs_1_1
+                  dcl_position v0
+
+                  def c4, 0,0,-0.01,0
+
+                  m4x4 r0, v0, c0
+                  add  oPos, r0, c4 ; move pos slightly closer to camera
+               endShaderSource
+            end
+
+            cullmode none
+
+            if ($doSkinning)
+               colorScalar (0.5, 0.5, 0, 1)
+            else
+               colorScalar (0.5, 0, 0, 1)
+            endif
+
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end
+         end
+
+         pass
+            shaderProgram
+               if ($doSkinning)
+                  bindConstants 0 -bindingID cameraToClip -constantCount 4
+               else
+                  bindConstants 0 -bindingID geomToClip -constantCount 4
+               endif
+
+               shaderSource
+                  vs_1_1
+                  dcl_position v0
+
+                  def c4, 0,0,-0.015,0
+
+                  m4x4 r0, v0, c0
+                  add  oPos, r0, c4 ; move pos slightly closer to camera
+               endShaderSource
+            end
+
+            if ($doSkinning)
+               colorScalar (1, 1, 0, 0.6)
+            else
+               colorScalar (1, 0, 0, 0.6)
+            endif
+
+            fillmode wireframe
+            cullmode none
+
+            depthTest true -enableDepthWrite false
+
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end
+         end
+      end
+   end
+enddef
+
+
+define VisualizeGeomNormalsDef()
+   material
+      shader
+         vertexFormatPred position 0 true
+
+         pass
+            shaderProgram
+               bindConstants 0 -bindingID geomToClip -constantCount 4
+               bindConstants 4 -bindingID immediateData -data $scale -constantType float
+
+               shaderSource
+                  vs_1_1
+                  dcl_position v0
+                  dcl_normal   v1
+                  dcl_tangent  v2
+                  dcl_binormal v3
+
+                  def c5, 0,1,-0.0001,0
+
+                  ; v0 holds a 4D position vector
+                  ; v0.xyz is the 3D position of the current line list vertex, and v0.w is either 0 for the 
+                  ; first vertex of the line primitive, or 1 for the second vertex
+                  mov  r0, v0
+
+                  ; displace the position of the current position in the direction of
+                  ; the normal/tangent/binormal
+                  ; the magnitude of the displacement is zero for the first vertex of the
+                  ; line primitive and c4.??? for the second
+                  mad  r0.xyz, v1.xyz, c4.xxx, r0.xyz
+                  mad  r0.xyz, v2.xyz, c4.yyy, r0.xyz
+                  mad  r0.xyz, v3.xyz, c4.zzz, r0.xyz
+
+                  mov  r0.w,   c5.y
+                  m4x4 r1,     r0, c0
+                  add  oPos,   r1, c5.wwzw      ; move pos slightly closer to camera
+               endShaderSource
+            end
+
+            colorScalar $color
+
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end
+         end
+      end
+   end
+enddef
+
+
+define BillboardTextOutputMaterial()
+   material
+      shader
+         vertexFormatPred position      0 true
+         vertexFormatPred texcoord      0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass
+            shaderProgram -target vertexProgram -method assemble
+
+            bindConstants 0 -bindingID geomToCamera -constantCount 3
+            bindConstants 3 -bindingID cameraToClip -constantCount 4
+            bindConstants 7 -bindingID clipToViewTarget -constantCount 4
+            bindConstants 11 -bindingID immediateData -data ($width, $height, 0, 1)
+
+               shaderSource 
+					vs_1_1
+					dcl_position0 v0
+					dcl_texcoord0 v1
+	
+
+					# obtain geom to camera translation vector in clip space
+					mov  r1.x, c0.w
+					mov  r1.y, c1.w
+					mov  r1.z, c2.w
+					mov  r1.w, c11.w
+					m4x4 r0,   r1,   c3
+
+					# project model translation vector to view target space
+					rcp  r1.w,  r0.w
+					mul  r0.xy, r0.xy, r1.ww
+					mul  r0.x,  r0.x,  c7.x          ; multiply by viewport half width and half height
+					mul  r0.y,  r0.y, -c8.y
+
+					# scale input position by billboard width/height and add to translation
+					# vector in view target space
+					mad r0.xy, v0.xz, c11.xy, r0.xy
+
+					# divide oPos.xy by viewport half width and half height to
+					# undo viewport transform scale that will be applied by system afterwards
+					rcp r1.x,    c7.x
+					rcp r1.y,   -c8.y
+					mul oPos.xy, r0.xy, r1.xy
+
+					# set w to 1 to prevent perspective divide on output coordinate
+					mul oPos.z,  r0.z, r1.w          ; do z = z/w divide since w will be set to 1
+					mul oPos.w,  r0.w, r1.w          ; w/w = 1
+					mov oT0,     v1
+					mov oT1,     v1
+				endShaderSource
+				
+            end
+
+
+            colorScalar $backgroundColor
+
+            if ($enableAlphaBlend)
+               depthTest true -enableDepthWrite false
+               alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+            endif
+
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end
+
+            stage
+               texture $textureName
+               textureFilterHint point point
+               # texture has full alpha where font renderer has written text, therefore:
+               # 'lerpTextureAlpha' operation selects font texels that are set, and background color everywhere else
+               # 'add' operation saturates to 255 for font texels that are set, and is the background alpha everywhere else
+               textureBlend lerpTextureAlpha(texture outRegister) add(outRegister texture)
+            end
+         end
+      end
+   end
+enddef
+
+
+# TODO: better name or reuse stdMatDiffColor
+setc color (0.5, 0.5, 1)
+setb solidMatAdditive false
+seti scLayer 0
+seti depthOffset 0
+
+define SolidColorMaterial()
+   material      
+      shader -layer $scLayer
+         vertexFormatPred position      0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+         
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            colorScalar $color
+            fillmode $stdMatFillMode
+            cullmode $stdMatCullMode
+            
+            ffDepthOffset $depthOffset
+            
+            if ($solidMatAdditive)
+               alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+            else
+               alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+            endif
+
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end
+         end
+      end
+   end
+enddef
+
+
+setb wfMatAdditive false
+seti wfLayer 0
+set  wfCullMode cullClockwise
+set  dstBlendFactor one
+# see also color above
+define WireframeMaterial()
+   material
+      shader -layer ($wfLayer * 18 + 17)
+         vertexFormatPred position      0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            colorScalar $color
+            fillmode wireframe
+            cullmode $wfCullMode
+
+            if ($wfMatAdditive)
+               alphaBlend srcFactor(srcAlpha) add dstFactor $dstBlendFactor
+            endif
+            
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end
+         end
+      end
+   end
+enddef
+
+set texName "dummy"
+
+define TexturedMaterial()
+   material
+      shader
+         vertexFormatPred position      0 true
+         vertexFormatPred texcoord      0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+
+            stage
+               texture $texName
+               textureBlend select(texture) select(texture)
+            end
+         end
+      end
+   end
+enddef
+
+define DirtyRectCompositingPass()
+   material
+      shader -layer 9999
+         vertexFormatPred position 0 true
+
+         pass
+            depthTest false -enableDepthWrite false
+
+            renderTarget viewerCompositingTarget
+
+            shaderProgram -target vertexProgram -method assemble
+
+               bindConstants 1 -bindingID clipToViewTarget -constantCount 4
+
+               shaderSource
+                  vs_1_1
+                  dcl_position v0
+
+                  def c0, 0.5, -0.5, 0, 1
+
+                  mul  r0.xy, v0.xy, c0.xy
+                  add oT0.xy, r0.xy, c0.xx
+
+                  ; calculate clip space position xy offsets to get a half pixel offset in screen space
+                  ; this is needed for a consistent pixel to texel mapping
+                  rcp r0.x, -c1.x                     ; -2 / viewport width
+                  rcp r0.y, -c2.y                     ;  2 / viewport height
+                  mad oPos.xy, r0.xy, c0.xx, v0.xy    ; oPos.x = v0.x - (1 / viewport width)
+                                                      ; oPos.y = v0.y + (1 / viewport height)
+                  mov oPos.zw, c0.ww                  ; oPos.z = 1
+                                                      ; oPos.w = 1
+               endShaderSource
+            end
+
+
+            stage
+               texture "DirtyRectRenderTargetTexture"
+
+               textureFilterHint point point
+               textureMIPFilterHint disabled
+               textureAddressing clamp clamp clamp
+
+               textureBlend select(texture) select(texture)
+            end
+         end
+      end
+   end
+enddef
+
+# used to visualize dynamically deformed geometries
+define VisDynamicallyDeformedMaterial()
+   material
+      shader -layer 9999
+
+
+	      create SetupSkinningStateAndPredicates()
+		  create SetupMorphingStateAndPredicates()
+
+         if ($doSkinning)
+            pass -fixedFunction
+               create PreprocessVertexShader()
+               if ($doSkinning)
+                  ffIdentityModelTransform
+               endif
+
+               colorScalar (1,0,0,0.5)
+               depthTest true -enableDepthWrite false
+               alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+               stage
+                  textureBlend select(colorScalar) select(colorScalar)
+               end
+            end
+         endif
+
+         if ($doMorphing)
+            pass -fixedFunction
+               create PreprocessVertexShader()
+               if ($doSkinning)
+                  ffIdentityModelTransform
+               endif
+
+               colorScalar (0,1,0,0.5)
+               depthTest true -enableDepthWrite false
+               alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+               stage
+                  textureBlend select(colorScalar) select(colorScalar)
+               end
+            end
+         endif
+      end
+   end
+enddef
+
+
+define VisColliderMaterial()
+   material
+      shader
+         vertexFormatPred position      0 true
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            colorScalar (0.5, 0, 1)
+            fillmode solid
+            cullmode cullClockwise 
+            
+            alphaBlend srcFactor(one) add dstFactor(zero)
+
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end
+         end
+         
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            colorScalar (1, 0, 0.5)
+            fillmode wireframe
+            cullmode cullCounterClockwise
+            
+            alphaBlend srcFactor(one) add dstFactor(zero)
+
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end            
+         end
+         
+      end
+   end
+enddef
+
+
+materialDefinition VisBound_Geom
+   setDefinition BoundGeomMaterial
+end
+
+materialDefinition VisBound_Renderable
+   setDefinition WireframeMaterial
+   #addParam color (0.5, 0.0, 0.0)
+   addParam wfColor (1, 0, 0, 1)
+   addParam wfMatAdditive true
+   addParam wfLayer 4
+   addParam wfCullMode none
+end
+
+materialDefinition VisBound_PointLight
+   setDefinition WireframeMaterial
+   addParam color (0.1, 0.1, 0)
+   addParam wfMatAdditive true
+   addParam wfCullMode none
+end
+
+materialDefinition VisBound_SpotLight
+   setDefinition WireframeMaterial
+   addParam color (0, 0.1, 0)
+   addParam wfMatAdditive true
+   addParam wfCullMode none
+end
+
+materialDefinition VisBound_Particles
+   setDefinition WireframeMaterial
+   addParam color (1, 0, 0, 1)
+   addParam wfMatAdditive true
+   addParam wfCullMode none
+   addParam dstBlendFactor zero
+end
+
+materialDefinition VisCollider
+   setDefinition VisColliderMaterial
+end
+
+materialDefinition VisDecal
+   setDefinition SolidColorMaterial
+   addParam color (0.5, 0.0, 0.8, 0.5)
+   addParam solidMatAdditive true
+   addParam stdMatCullMode none
+end
+
+materialDefinition VisDynamicallyDeformedGeomMaterial
+   setDefinition VisDynamicallyDeformedMaterial
+end
+
+materialDefinition VisualizeGeomNormals
+   setDefinition VisualizeGeomNormalsDef
+   addParam color (1, 0, 0, 1)
+   addParam scale (0.02, 0, 0, 0)
+end
+
+materialDefinition VisualizeGeomTangents
+   setDefinition VisualizeGeomNormalsDef
+   addParam color (0, 1, 0, 1)
+   addParam scale (0, 0.02, 0, 0)
+end
+
+materialDefinition VisualizeGeomBinormals
+   setDefinition VisualizeGeomNormalsDef
+   addParam color (0, 0, 1, 1)
+   addParam scale (0, 0, 0.02, 0)
+end
+
+materialDefinition Anim_LookAtBoxMaterial1
+   setDefinition SolidColorMaterial
+   addParam color (0.9, 0.2, 0.2)
+end
+
+materialDefinition Anim_LookAtBoxMaterial2
+   setDefinition SolidColorMaterial
+   addParam color (0.75, 0.75, 0.2)
+end
+
+materialDefinition Anim_LookAtBoxMaterial3
+   setDefinition SolidColorMaterial
+   addParam color (0.2, 0.9, 0.2)
+end
+
+materialDefinition Anim_LookAtBoxMaterial4
+   setDefinition SolidColorMaterial
+   addParam color (0.2, 0.2, 0.9)
+end
+
+materialDefinition Anim_ChoreoLocoRequestPath
+   setDefinition SolidColorMaterial
+   addParam color (0.3, 0.7, 0.3)
+end
+
+materialDefinition Anim_ChoreoLocoRequestRefPath1
+   setDefinition SolidColorMaterial
+   addParam color (0.7, 0.3, 0.3)
+end
+
+materialDefinition Anim_ChoreoLocoRequestRefPath2
+   setDefinition SolidColorMaterial
+   addParam color (0.7, 0.7, 0.3)
+end
+
+materialDefinition Anim_ChoreoLocoRequestWayPoint
+   setDefinition SolidColorMaterial
+   addParam color (0.0, 0.75, 0.85)
+end
+
+materialDefinition PathPlan_QTCellDefault
+   setDefinition WireframeMaterial
+   addParam color (0, 0, 1, 0.5)
+end
+
+materialDefinition PP_TEMPMATERIAL
+   setDefinition WireframeMaterial
+   addParam color (1, 0.588, 0, 0.5)
+end
+
+materialDefinition PathPlan_QTCellImpassable
+   setDefinition SolidColorMaterial
+   addParam color (1, 0, 0, 0.5)
+end
+
+materialDefinition PathPlan_QTCellBoundary
+   setDefinition SolidColorMaterial
+   addParam color (1, 0.3, 0, 0.5)
+end
+
+
+materialDefinition PathPlan_QTCellTraversable
+   setDefinition WireframeMaterial
+   addParam color (1, 0, 1, 0.5)
+end
+
+materialDefinition PathPlan_QTCellTraversableMid	
+   setDefinition WireframeMaterial
+   addParam color (0.5, 0, 1, 0.5)
+end
+
+materialDefinition PathPlan_QTCellTraversableInner
+   setDefinition WireframeMaterial
+   addParam color (1, 0, 0.5, 0.5)
+end
+
+materialDefinition PathPlan_QTCellNoFloor
+   setDefinition WireframeMaterial
+   addParam color (0, 1, 0, 0.5)
+end
+
+materialDefinition PathPlane_QTCellCostVariable
+   setDefinition WireframeMaterial
+   addParam color (0, 1, 1, 0.5)
+end
+
+
+
+materialDefinition PathPlan_QTDoorMaterial
+   setDefinition WireframeMaterial
+   addParam color (1, 1, 0, 0.5)
+end
+
+materialDefinition PathPlan_QTDoorMaterialEntrance
+   setDefinition WireframeMaterial
+   addParam color (1, 1, 0, 0.5)
+end
+
+
+materialDefinition PathPlan_QTDoorMaterialExit
+   setDefinition WireframeMaterial
+   addParam color (1, 0.5, 0, 0.5)
+end
+
+materialDefinition PathPlan_sQTLinkMaterial
+   setDefinition SolidColorMaterial
+   addParam color (1, 1, 1, 0.5)
+end
+
+materialDefinition GUOBOff
+   setDefinition Null
+end
+
+materialDefinition DirtyRectCompositingPassMaterial
+   setDefinition DirtyRectCompositingPass
+end
+
+materialDefinition AudioVisMaterial
+   setDefinition WireframeMaterial
+   addParam color (1,1,0)
+end
+
+
+materialDefinition VisGUOBMaterial
+   setDefinition SolidColorMaterial
+   addParam stdMatCullMode none
+   addParam color (0.5, 0.5, 1, 0.5)
+end
+
+materialDefinition VisCameraCOI
+   setDefinition SolidColorMaterial
+   addParam color (1, 0, 0)
+end
+
+
+# debugging materials
+# TODO: remove the MV_ prefix -- these
+# are apparently used by the game too.
+materialDefinition MV_BoneMarkerX
+   setDefinition SolidColorMaterial
+   addParam color (1, 0, 0)
+end
+
+materialDefinition MV_BoneMarkerY
+   setDefinition SolidColorMaterial
+   addParam color (0, 1, 0)
+end
+
+materialDefinition MV_BoneMarkerZ
+   setDefinition SolidColorMaterial
+   addParam color (0, 0, 1)
+end
+
+materialDefinition MV_AnimArrowHeadMaterial
+   setDefinition SolidColorMaterial
+   addParam color (0.85, 0.85, 0.85)
+end
+
+materialDefinition MV_ShowAnimationData
+   setDefinition TexturedMaterial
+   addParam texName MV_AnimationDataTexture
+end

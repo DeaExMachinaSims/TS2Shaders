@@ -1,0 +1,158 @@
+#
+# Predefined neighborhood materials
+#
+#
+
+
+# In an ideal world these would be code-set variables.
+setf terrainCellSize 10
+seti terrainNumCells 128
+setf terrainWidth ($terrainCellSize * $terrainNumCells)
+
+seti  nhoodRoadLayer -1
+
+# ==============================================================================
+define NHoodRoadMaterialDef()
+
+   material   
+		shader -layer ($nhoodRoadLayer * 8)
+			viewerRenderTypePred $kRenderTypeNormal
+         
+			create DetermineHardwareSupport()
+         
+			if ($useSWVertexShaderPath)
+				 pass
+					shaderProgram -target vertexProgram -method link
+						create BindsForSoftwareVSTransforms(false false)
+						setv4 texgenData ( 0, 0 , 1/($terrainWidth),  1/($terrainWidth))
+									
+						bindConstants 11 -bindingID immediateData -data $texgenData
+									
+						create TransformFragments( false false true false 0 0 false 2_x)
+						shaderFragment Copy2DTexcoords2_x
+						shaderFragment TerrainLightmapTexgenUVOne2_x		
+					end
+				
+					alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+					fillmode $stdMatFillMode
+  					colorScalar (1, 1, 1, 1)
+		            
+					stage
+						texture $stdMatBaseTextureName
+						textureAddressing clamp clamp
+						textureBlend select(texture) select(texture)
+					end 
+					stage
+						texture "nhoodLightMap"
+						textureBlend multiply(texture outRegister) select(outRegister)
+					end  
+
+
+				end
+            
+         
+         else
+         
+         # temp force to FF to prevent flicker
+			if (0) #$useFixedFunctionPath = false)
+			
+				#create PixelShaderNHoodRoadMaterialDef()
+            setb foo false
+            
+			else 
+				pass -fixedFunction                  
+					create LightingStatesNoStdLights()
+					alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+					fillmode $stdMatFillMode
+					colorScalar (1, 1, 1, 1)
+		                  
+					stage
+						texture $stdMatBaseTextureName
+						textureAddressing clamp clamp
+						ffTextureCoordsSource 0
+						textureBlend select(texture) select(texture)
+					end 
+					stage
+						texture "nhoodLightMap"
+						ffTextureMatrix -cameraToGlobal -scale ($terrainWidth) -invert
+						ffTextureCoordsSource fromPosition
+						textureBlend multiply(texture outRegister) select(outRegister)
+					end  
+				end
+			endif
+			
+			
+         endif
+			
+      end
+      shader
+         viewerRenderTypePred viewerRenderType
+      end
+   end
+enddef
+
+define NHoodRoadMaterial(materialName textureName)
+   materialDefinition &materialName
+      setDefinition NHoodRoadMaterialDef
+      addParam stdMatBaseTextureName &textureName
+   end
+enddef
+
+
+# This material is used for road supports and retaining walls.
+# Don't clamp it like a normal road texture.
+define NHoodSupportMaterial(materialName textureName)
+
+   materialDefinition &materialName   
+      setDefinition StandardMaterial
+      addParam   stdMatLightingEnabled true
+      addParam   stdMatDiffCoef (1.0, 1.0, 1.0)
+      
+      addParam   stdMatBaseTextureName &textureName
+      
+      addParam   stdMatBaseTextureEnabled true
+      addParam   stdMatAlphaBlendMode blend
+   end
+   
+enddef
+
+
+
+##################################################################
+create NHoodRoadMaterial(neighborhood-roads-Desert-00005700 Desert_roads_00005704)
+create NHoodRoadMaterial(neighborhood-roads-Desert-00020700 Desert_roads_00020704)
+create NHoodRoadMaterial(neighborhood-roads-Desert-00000f00 Desert_roads_00000f04)
+create NHoodRoadMaterial(neighborhood-roads-Desert-00000300 Desert_roads_00000304)
+create NHoodRoadMaterial(neighborhood-roads-Desert-00004b00 Desert_roads_00004b04)
+
+create NHoodRoadMaterial(neighborhood-roads-Temperate-00005700 Temperate_roads_00005704)
+create NHoodRoadMaterial(neighborhood-roads-Temperate-00020700 Temperate_roads_00020704)
+create NHoodRoadMaterial(neighborhood-roads-Temperate-00000f00 Temperate_roads_00000f04)
+create NHoodRoadMaterial(neighborhood-roads-Temperate-00000300 Temperate_roads_00000304)
+create NHoodRoadMaterial(neighborhood-roads-Temperate-00004b00 Temperate_roads_00004b04)
+
+create NHoodRoadMaterial(neighborhood-roads-European-00005700 European_roads_00005704)
+create NHoodRoadMaterial(neighborhood-roads-European-00020700 European_roads_00020704)
+create NHoodRoadMaterial(neighborhood-roads-European-00000f00 European_roads_00000f04)
+create NHoodRoadMaterial(neighborhood-roads-European-00000300 European_roads_00000304)
+create NHoodRoadMaterial(neighborhood-roads-European-00004b00 European_roads_00004b04)
+
+create NHoodSupportMaterial(neighborhood-roads-08080000 bridge-sides)
+create NHoodSupportMaterial(neighborhood-roads-0912220e bridge-sides)
+create NHoodSupportMaterial(neighborhood-roads-00bb0000 bridge-sides)
+create NHoodSupportMaterial(neighborhood-roads-00bb0200 bridge-sides)
+
+create NHoodRoadMaterial(neighborhood-roads-Concrete-00005700 Concrete_roads_00005704)
+create NHoodRoadMaterial(neighborhood-roads-Concrete-00020700 Concrete_roads_00020704)
+create NHoodRoadMaterial(neighborhood-roads-Concrete-00000f00 Concrete_roads_00000f04)
+create NHoodRoadMaterial(neighborhood-roads-Concrete-00000300 Concrete_roads_00000304)
+create NHoodRoadMaterial(neighborhood-roads-Concrete-00004b00 Concrete_roads_00004b04)
+
+create NHoodRoadMaterial(neighborhood-roads-Dirt-00005700 Dirt_roads_00005704)
+create NHoodRoadMaterial(neighborhood-roads-Dirt-00020700 Dirt_roads_00020704)
+create NHoodRoadMaterial(neighborhood-roads-Dirt-00000f00 Dirt_roads_00000f04)
+create NHoodRoadMaterial(neighborhood-roads-Dirt-00000300 Dirt_roads_00000304)
+create NHoodRoadMaterial(neighborhood-roads-Dirt-00004b00 Dirt_roads_00004b04)
+
+# This material is used underneath roads adjacent to zones.
+create NHoodRoadMaterial(neighborhood-roads-08200000 bridge-sides)

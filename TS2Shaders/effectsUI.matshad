@@ -1,0 +1,159 @@
+# The following definitions were copied from the steam sphere to make a uieffect shader.
+# This is a test shader to help in evolving the UI headline FX.  
+# C Stratton 4/27/03
+#
+
+
+#
+# This shader differs from the effects shader in that it ignores zbuffer.    
+# and may be extended further to accomodate UI specific needs
+# 
+# beginshader uiHeadlineBillboardTest
+define uiHeadlineBillboardTest()
+      material
+         shader -layer 0
+            vertexFormatPred blendindices  0 false
+            vertexFormatPred targetindices 0 false
+            #vertexFormatPred position 0 true
+            create BillboardPass($stdMatBaseTextureName 0 (0, 0))
+         end
+      end
+enddef
+#endshader uiHeadlineBillboardTest
+
+
+define BillboardPass (BillboardTexture speed origin)
+   pass -fixedFunction
+      # using depthTest (below) to ignore z-depth
+      depthTest false -enableDepthWrite false
+      alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)      
+      stage
+         texture &BillboardTexture
+         # Following two lines correct for UV flip in particle billboards
+         ffTextureMatrix -scalev (1, -1)
+         textureTransformType vector2
+         textureBlend add(texture) multiply(texture diffuse)
+         #
+      end      
+   end
+enddef
+
+
+
+# Billboard Material Definitions
+
+materialDefinition uieffectsHeadlines_Romance
+   setDefinition uiHeadlineBillboardTest
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName uieffects-headlines-billboardtextures-romance
+end
+
+materialDefinition uieffectsHeadlines_RomanceBroken
+   setDefinition uiHeadlineBillboardTest
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName uieffects-headlines-billboardtextures-romancebroken
+end
+
+materialDefinition uieffectsHeadlines_Crush
+   setDefinition uiHeadlineBillboardTest
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName uieffects-headlines-billboardtextures-crush
+end
+
+materialDefinition uieffectsHeadlines_CrushBroken
+   setDefinition uiHeadlineBillboardTest
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName uieffects-headlines-billboardtextures-crushbroken
+end
+
+materialDefinition uieffectsHeadlines_FriendshipSinglePlus
+   setDefinition uiHeadlineBillboardTest
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName uieffects-headlines-billboardtextures-friendshipsingleplus
+end
+
+materialDefinition uieffectsHeadlines_FriendshipDoublePlus
+   setDefinition uiHeadlineBillboardTest
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName uieffects-headlines-billboardtextures-friendshipdoubleplus
+end
+
+materialDefinition uieffectsHeadlines_FriendshipSingleMinus
+   setDefinition uiHeadlineBillboardTest
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName uieffects-headlines-billboardtextures-friendshipsingleminus
+end
+
+materialDefinition uieffectsHeadlines_FriendshipDoubleMinus
+   setDefinition uiHeadlineBillboardTest
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend 
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName uieffects-headlines-billboardtextures-friendshipdoubleminus
+end
+
+
+#
+# The following shader is for strip animations applied to particle billboard effects
+# C Stratton 4/18/03
+#
+
+# beginshader uiHeadlineBillboardAnimationTest
+define uiHeadlineBillboardAnimationTest()
+      material
+         shader -layer 0
+            #vertexFormatPred position 0 true
+            create BillboardAniPass($stdMatBaseTextureName 0 (0, 0))
+         end
+      end
+enddef
+#endshader uiHeadlineBillboardAnimationTest
+
+
+define BillboardAniPass (BillboardTexture speed origin)
+   pass -fixedFunction
+      # using depthTest (below) to ignore z-depth
+      depthTest false -enableDepthWrite false
+      alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)      
+      stage
+         texture &BillboardTexture
+         #
+         # Following two lines correct for UV flip in particle billboards
+         # Note that if ffTextureTileAnim is used, these commands are somehow overridden.
+         #
+         #ffTextureMatrix -scalev (1, -1)
+         #textureTransformType vector2
+         #
+         # Following line is for animation strips (conversation and thought balloons)
+         #
+         textureTileAnimation 1 -tiles (18,1) -targetType fixedFunction
+         #
+         textureBlend add(texture) multiply(texture diffuse)
+         #
+      end      
+   end
+enddef
+
+materialDefinition uieffectsHeadlinesAni_ThoughtBalloonTest
+   setDefinition uiHeadlineBillboardAnimationTest
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend 
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName uieffects-headlines-anistriptextures-thoughtballoon18_test
+end
+
+

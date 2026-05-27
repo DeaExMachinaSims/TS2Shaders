@@ -1,0 +1,22 @@
+#
+# Effect materials
+#
+
+# Standard materials used directly by the
+# effects manager, or referenced from Maya
+include "particles.matShad"
+
+# Custom materials referenced from Maya or
+# effect scripts.
+include "effects.matShad"
+include "effectsUI.matShad"
+include "lamps.matShad"
+include "steam.matShad"
+include "clothesChange.matShad"
+include "fight.matShad"
+include "food.matShad"
+include "hottub.matShad"
+include "stereo.matShad"
+include "lightning.matShad"
+include "animals.matShad"
+include "water.matShad"

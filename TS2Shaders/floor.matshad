@@ -1,0 +1,618 @@
+#
+# Shaders for indoor & outdoor tiles; i.e., "Floors".
+#
+#
+
+seti gridLayer 13
+seti floorLayer -4
+setf floorMaterialScaleU 1.0  # defaults for Floor materials without these defined
+setf floorMaterialScaleV 1.0  # defaults for Floor materials without these defined
+setb floorHighlightOn false
+setc floorHighlightIntensity (0.25, 0.25, 0.25, 1.0)  # attenuation of the floor highlight texture
+setf floorGridAlpha 0.775
+seti previewLayer 0 # -28
+
+# debug options for PS hardware only, only set one of these to true
+setb debugShowFloorIncidence false   # shows the incidence maps as color
+setb debugShowFloorNormalMap false   # shows the raw normal map (if it exists)
+setb debugFloorLighting false       # no base texture, only lighting results
+setb debugShowLightMapTexcoords false  # texcoords as color
+
+
+setb floorCausticsPass false
+seti floorRenderStyle 0
+setb hasCutout false
+
+include PixelShaderFloors.matShad
+
+
+#beginshader Floor
+#description Basic floor tile shader; texture + floor gradient + shadows
+#extraparam float floorMaterialScaleU 1 0.125 64 ; no. tiles to map across U axis, use any positive number
+#extraparam float floorMaterialScaleV 1 0.125 64 ; no. tiles to map across V axis, use any positive number
+define Floor()
+   material
+      if ($stdMatLightingDebug)
+         create LightingDebugStandardMaterialOverrides()
+      endif
+      create FloorShaders()
+   end
+enddef
+#endshader
+
+
+#beginshader FloorPool
+#description Pool tile shader, with caustics.
+#extraparam bool floorCausticsPass 1 ; set to true to add water caustics.
+define FloorPool()
+   material
+      if ($stdMatLightingDebug)
+         create LightingDebugStandardMaterialOverrides()
+      endif
+      create FloorShaders()
+   end
+enddef
+#endshader
+
+
+
+
+#
+# Standard floor shaders
+#
+define FloorShaders()
+
+   if (viewerRenderType = $kRenderTypeShadowMap)
+	   create ShadowMapVS_PS()
+	else
+	   setb bumpMapFloors false
+
+	   create DetermineHardwareSupport()
+   	
+	   setb hasTexcoord2 (hasVertexFormat(texcoord,1))
+   	
+      # check for the page, the global bumpmap glag, and for the normal map in the material
+	   if (varExists(page) and $bumpMapping and $stdMatNormalMapTextureEnabled and $hasTexcoord2)
+		   setb bumpMapFloors true
+	   endif
+
+      if ($useHWShader1Path or $useHWShader2Path)
+   	
+		   create PixelShaderFloors($bumpMapFloors)
+   		
+	   else
+      
+		   # fixed function paths NEVER get bump mapping due to fill rate and memory concerns.
+   	
+		   create FixedFunctionFloorShader()  
+
+		   # ultimate fallback pass? no light map, one stage. 
+		   shader -layer $floorLayer
+			   validateRenderShaderContext -vertexFormat position 0 required
+			   validateRenderShaderContext -vertexFormat normal 0 required
+			   validateRenderShaderContext -vertexFormat texcoord 0 required
+			   validateRenderShaderContext -viewerRenderType viewerRenderType
+   			
+			   pass -fixedFunction
+				   create LightingStates()
+				   create AttenuatedMatCoef(1)
+				   fillmode $stdMatFillMode
+   				
+				   if ($hasCutout)                         
+                  depthTestFunction acceptIfEqual
+               else
+                  depthTestFunction acceptIfLessOrEqual
+               endif
+
+				   stage
+					   texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+					   textureAddressing tile tile
+					   ffTextureMatrix -scalev (1/$floorMaterialScaleU, 1/$floorMaterialScaleV)
+					   textureTransformType vector2
+					   ffTextureCoordsSource 0
+					   textureBlend multiplyScale2(texture diffuse) select(outRegister)
+				   end 
+			   end
+
+			   create HighlightPass()
+   			
+		   end
+	   endif
+	endif
+	
+enddef
+
+#
+# Standard floor shader,
+#
+define FixedFunctionFloorShader()
+   
+   setb lightMapAvailable false
+   if (varExists(page))
+      setb lightMapAvailable true
+   endif
+   
+   setb caustics false
+   if ($floorCausticsPass and $causticsEnabled)
+      setb caustics true
+   endif   
+   
+   shader -layer $floorLayer
+      validateRenderShaderContext -vertexFormat position 0 required
+      validateRenderShaderContext -vertexFormat texcoord 0 required
+      validateRenderShaderContext -viewerRenderType viewerRenderType
+      
+      set stdMatSpecCoef (0, 0, 0)
+      set stdMatSpecPower 0
+
+		if ($caustics)
+		 pass -fixedFunction -modifiedEachFrameHint      
+		else
+		 pass -fixedFunction
+		endif
+
+      ffDepthOffset 0
+      
+      if ($hasCutout)                         
+         depthTestFunction acceptIfEqual
+      else
+         depthTestFunction acceptIfLessOrEqual
+      endif
+      
+      # empirically, Floors seem to only take 3 inputs
+      # the base texture
+      # the light map
+      # the material color, which seems to act as a 'tune' value.
+      
+      # Lightmaps are scaled by 0.5, so this must multiply by 2 to get to the correct brightness.
+      # No alpha blending is required, nor is alpha scaling required.
+   
+         # # don't pre-scale -- that's in the texture.
+         fillmode $stdMatFillMode
+             
+         if ($lightMapAvailable)
+
+            colorScalar ($stdMatDiffCoef) 1
+
+				stage 
+					create SelectFloorLightMap()
+		              
+					# add the lightmap lighting to any direct lights.
+					# the light map has been prescaled by 0.5
+					textureBlend multiply(texture colorScalar) select(texture)
+				end
+            
+            stage
+               texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+		            
+               textureAddressing tile tile
+               ffTextureMatrix -scalev (1/$floorMaterialScaleU, 1/$floorMaterialScaleV)
+               ffTextureCoordsSource 0
+		
+               textureBlend multiplyScale2(texture outRegister) select(colorScalar)
+            end 
+            
+         else
+         
+         # no lightmap case:
+
+            
+            colorScalar ($stdMatDiffCoef) 1
+            
+            stage
+               texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+		            
+               textureAddressing tile tile
+               ffTextureMatrix -scalev (1/$floorMaterialScaleU, 1/$floorMaterialScaleV)
+               ffTextureCoordsSource 0
+               
+              textureBlend multiply(colorScalar texture) select(colorScalar)
+            end
+          
+            
+
+         endif
+		         
+			
+			
+		end 
+
+      if ( $lightMapAvailable)  # thumbnails don't have lightmaps, causing this to fail without them, so assume no work to be done without lightmaps.
+      
+         if ($lmIntegratedShadows )
+            # Still experimental
+            pass -fixedFunction
+               create LightingStatesNoStdLights()
+               fillmode $stdMatFillMode
+               
+               alphaBlend srcFactor(destColor) add dstFactor(zero)
+               
+               alphaTest true 100
+               alphaTestFunction acceptIfGreater
+   
+               colorScalar (0.61, 0.61, 0.61)  # needs to be set by tsUserEtc
+   
+               ffDepthOffset 1
+   
+               stage
+                  create SelectFloorLightMap()
+                  textureBlend select(colorScalar) select(texture)
+               end 
+            end
+         elseif ((not ($useHWShader2Path or $useHWShader1Path)))
+            # Mark the depth buffer where the shadow is so object shadows
+            # do not overlap.
+            pass -fixedFunction
+               create LightingStatesNoStdLights()
+               alphaBlend srcFactor(zero) add dstFactor(one)
+               fillmode $stdMatFillMode
+   
+               ffDepthOffset 1
+               depthTest true -enableDepthWrite true
+               alphaTest true 100
+               alphaTestFunction acceptIfLess
+   
+               stage
+                  create SelectFloorLightMap()
+                  textureBlend select(texture) select(texture)
+               end 
+            end
+         endif
+      endif
+      
+		create HighlightPass()
+	end
+  
+	
+   
+enddef
+
+
+#beginshader FloorReflective
+#description Basic floor tile shader with reflection; texture + floor gradient + shadows
+#extraparam float floorMaterialScaleU 1 0.125 64 ; no. tiles to map for U axis, use any positive number
+#extraparam float floorMaterialScaleV 1 0.125 64 ; no. tiles to map for V axis, use any positive number
+#extraparam float reflectStrength 1 0 1 ; strength of reflection, in range 0 to 1
+
+set ratioH 1   # default material parameter value
+set ratioW 1   # default material parameter value
+set useReflectionFloors 0 # default material parameter value
+define FloorReflective()
+	material
+		shader
+			#reflective floors are currently dead. might ressurect them in an expansion pack
+				
+		end
+	end
+enddef
+
+
+
+#
+# gridMaterial -- composites the alpha grid texture over the normal floor texture 
+#                 NOTE: In order to guarantee this is drawn on top of the normal
+#                 floor tile textures, the layer has to be higher than that for
+#                 the normal floor textures.
+
+define TileGridMaterial()
+
+	material
+      if (viewerRenderType = $kRenderTypeNormal)
+      
+         shader -layer $gridLayer
+            
+               # this is using modifiedEachFrameHint, because when the pool tool
+               #   is used it does not invalidate the entire terrain or invalidate the frame.
+               pass -fixedFunction # -modifiedEachFrameHint
+                  validateRenderShaderContext -viewerRenderType $kRenderTypeNormal  # normal render
+            
+                  create LightingStatesNoStdLights()
+                  alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+                  
+                  # Add an alpha test to avoid processing fully transparent pixels
+                  alphaTest true 0
+                  alphaTestFunction acceptIfGreater                  
+                     
+                  # Since the terrain has identical geometry, and is assumed to be rendered
+                  # before the grid, there is no need to write to the z-buffer again.  If
+                  # the geometry of the grid diverges from the geometry of the terrain, we
+                  # *may* want to reenable depth writes here.
+                  
+                  depthTest true -enableDepthWrite false 
+                  ffDepthOffset 2
+                  fillmode $stdMatFillMode
+                  colorScalar (0,0,0) $floorGridAlpha
+                  stage
+                     texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+                     ffTextureCoordsSource 0
+                     textureBlend multiply(texture colorScalar) multiply(texture colorScalar)
+                  end 
+               end
+            
+         end #shader
+      else
+         shader
+         
+         end
+      endif
+	end #mat
+enddef
+
+#
+# inverseGridMaterial -- composites the inverse of the alpha grid texture over the normal floor texture 
+#                 NOTE: In order to guarantee this is drawn on top of the normal
+#                 floor tile textures, the layer has to be higher than that for
+#                 the normal floor textures.
+
+define InverseTileGridMaterial()
+
+	#trace "$currentMaterialName  inverse tile grid material"
+	
+   material
+		shader -layer $gridLayer
+         if (viewerRenderType = $kRenderTypeNormal)
+      
+            create DetermineHardwareSupport()
+            
+            if ($useHWShader1Path or $useHWShader2Path)
+               create PixelShaderInverseTileGridRendering()
+            else
+               # this pass draws the completely opaque region of the grid line
+               # hiding the incorrect sorting behavior of the second pass at high
+               # resolution mipmap levels
+               pass -fixedFunction
+                  create LightingStatesNoStdLights()
+                  alphaTest true 192
+                  alphaTestFunction acceptIfGreater
+                  fillmode $stdMatFillMode
+   
+                  stage
+                     texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+                     ffTextureCoordsSource 0
+                     textureBlend select(texture:invert) select(texture)
+                  end 
+               end 
+   
+               # this pass draws the transition region along the edges of the grid lines
+               # this provides a blurry grid at lower mipmap levels (where the solid grid
+               # line disappears entirely)
+               pass -fixedFunction
+                  create LightingStatesNoStdLights()
+                  alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+                  alphaTest true 192
+                     alphaTestFunction acceptIfLess
+                  depthTest true -enableDepthWrite false 
+                  fillmode $stdMatFillMode
+   
+                  stage
+                     texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+                     ffTextureCoordsSource 0
+                     textureBlend select(texture:invert) select(texture)
+                  end 
+               end 
+            endif
+         end
+      else
+         shader
+         
+         end
+      endif
+	end
+enddef
+
+
+define TileLocalGridMaterial()
+   material
+      # 7/26/04 This material should only be reinstated if the cursor moves a part that causes 
+      # visible damage to be updated with respect to where it is moved.  Marking all the 
+      # terrain tiles with this modifiedEachFrameHint is too slow.  For now this material
+      # is disabled. 
+      
+      if (viewerRenderType = $kRenderTypeNormal)
+      
+         attributes
+            attribute alphaScale float1
+            attribute alphaTrans float2
+         end
+         
+         shader -layer $gridLayer
+            vertexFormatPred blendindices  0 false
+            vertexFormatPred targetindices 0 false
+            
+            # Local grid is revelated across the multiple tiles and it does not track damage.
+            # Using modifiedEachFrameHint so that grid lines are not left behind.
+            pass -fixedFunction # -modifiedEachFrameHint
+               create LightingStatesNoStdLights()
+               alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+               # Add an alpha test to avoid processing fully transparent pixels
+               alphaTest true 0
+               alphaTestFunction acceptIfGreater
+               # Since the terrain has identical geometry, and is assumed to be rendered
+               # before the grid, there is no need to write to the z-buffer again.  If
+               # the geometry of the grid diverges from the geometry of the terrain, we
+               # *may* want to reenable depth writes here.
+               depthTest true -enableDepthWrite false 
+               fillmode $stdMatFillMode
+               
+               ffDepthOffset 2   # above the shadow/overlay layer.
+   
+               colorScalar (0,0,0) $floorGridAlpha
+               
+               stage
+                  texture "localgrid-alphafadeout" ${stdMatBaseTextureParam}
+                  ffTextureCoordsSource 0
+                  textureAddressing clamp clamp
+                  textureTransformType vector2
+                  ffTextureMatrix -scale @alphaScale -trans @alphaTrans
+                  textureBlend select(outRegister) multiply(texture colorScalar)
+               end
+               
+               stage
+                  texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+                  ffTextureCoordsSource 0            
+                  textureBlend multiply(texture colorScalar) multiply(texture outRegister)
+               end
+            end
+         end
+      else
+         shader
+         
+         end
+      endif
+   end			
+enddef
+
+
+define SelectFloorLightMap()
+   texture "floorLightMap_${page}"
+   ffTextureCoordsSource 1
+enddef
+
+define SelectFloorIncidenceMap()
+   texture "floorIncidenceMap_${page}"
+   ffTextureCoordsSource 1
+enddef
+
+
+# PS highlighting done in the shader instead of normal maps.
+
+define HighlightPass()
+   if ($floorHighlightOn)
+      # pass for the additive part of the highlight texture
+      pass -fixedFunction
+         create LightingStates()
+         alphaBlend srcFactor(one) add dstFactor(one)  # just add the highlight to whatever was there
+         
+         # Add an alpha test to avoid processing fully transparent pixels
+         alphaTest true 0
+      	 alphaTestFunction acceptIfGreater
+
+         fillmode $stdMatFillMode
+
+         colorScalar ($floorHighlightIntensity)  # adjust highlight texture brightness
+
+         stage
+            texture "floor_selection_colors"
+            ffTextureCoordsSource 0  # use the floor pattern texture coordinates
+            textureBlend multiplyAdd(texture colorScalar outRegister) select(texture)
+         end
+      end
+
+      # pass for the subtractive part of the highlight texture
+      pass -fixedFunction
+         create LightingStates()
+         alphaBlend srcFactor(one) sub dstFactor(one)  # just add the highlight to whatever was there
+         
+         # Add an alpha test to avoid processing fully transparent pixels
+         alphaTest true 0
+      	 alphaTestFunction acceptIfEqual
+
+         fillmode $stdMatFillMode
+
+         colorScalar ($floorHighlightIntensity)  # adjust highlight texture brightness
+
+         stage
+            texture "floor_selection_colors"
+            ffTextureCoordsSource 0  # use the floor pattern texture coordinates
+            textureBlend multiplyAdd(texture colorScalar outRegister) select(texture)
+         end
+      end
+   endif
+enddef
+
+# Empty tile
+materialDefinition tileshaderempty
+   setDefinition Null
+end
+
+materialDefinition tileShaderMayLevel_0
+   setDefinition SolidColorMaterial
+   addParam scLayer $previewLayer
+   addParam color (0,1,0)   
+end
+
+materialDefinition tileShaderMayNotLevel_0
+   setDefinition SolidColorMaterial   
+   addParam scLayer $previewLayer
+   addParam color (1,0,0)   
+end
+
+materialDefinition tileShaderMayLevel_0_
+   setDefinition SolidColorMaterial
+   addParam scLayer $previewLayer
+   addParam depthOffset 2
+   addParam color (0,1,0)   
+end
+
+materialDefinition tileShaderMayNotLevel_0_
+   setDefinition SolidColorMaterial
+   addParam scLayer $previewLayer
+   addParam depthOffset 2
+   addParam color (1,0,0)   
+end
+
+
+# Terrain grid
+materialDefinition floorGridBlack
+   setDefinition TileGridMaterial
+   addParam stdMatBaseTextureName floor-grid
+end
+
+# Local Terrain grid
+materialDefinition floorLocalGridBlack
+   setDefinition TileGridMaterial # TileLocalGridMaterial
+   addParam stdMatBaseTextureName floor-grid
+end
+
+# Upper floor grid
+materialDefinition floorGridWhite
+   setDefinition InverseTileGridMaterial
+   addParam stdMatBaseTextureName floor-grid
+end
+
+# Active-level Terrain grid
+materialDefinition floorGridBlackActiveLevel
+   setDefinition TileGridMaterial # TileLocalGridMaterial
+   addParam stdMatBaseTextureName floor-grid-active
+end
+
+# Active-level Local Terrain grid
+materialDefinition floorLocalGridBlackActiveLevel
+   setDefinition TileGridMaterial # TileLocalGridMaterial
+   addParam stdMatBaseTextureName floor-grid-active
+end
+
+# Active-level Upper Floor grid
+materialDefinition floorGridWhiteActiveLevel
+   setDefinition InverseTileGridMaterial
+   addParam stdMatBaseTextureName floor-grid-active
+end
+
+
+materialDefinition floor_oak_seethrough
+   setDefinition FloorReflective
+   addParam stdMatLayer 2
+   addParam stdMatBaseTextureName floor-oak
+   addParam reflectStrength .3
+end
+
+materialDefinition floor_mountainFogTile
+   setDefinition FloorReflective
+   addParam stdMatLayer 2
+   addParam stdMatBaseTextureName floor-mountainFogTile
+   addParam reflectStrength .1
+end
+
+materialDefinition floor_brickPatio
+   setDefinition Floor
+   addParam stdMatBaseTextureName floor-brickPatio
+   addParam stdMatDiffCoef (0.63, 0.63, 0.56)
+end
+
+materialDefinition FloorThickness
+   setDefinition StandardMaterial
+   addParam   stdMatSpecPower 0
+   addParam   stdMatDiffCoef (0.5, 0.5, 0.5)
+   addParam   stdMatBaseTextureName floor-edge
+   addParam   stdMatBaseTextureEnabled true
+end

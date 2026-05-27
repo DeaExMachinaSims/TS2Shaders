@@ -1,0 +1,51 @@
+#
+# deck/foundation material definitions.
+#
+
+# material for roof preview when they're displayed
+define DeckFoundationPreviewMaterial()
+   material
+      shader -layer 9991
+         vertexFormatPred position      0 true
+         vertexFormatPred normal        0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction         
+            colorScalar $baseColor         
+            create LightingStatesNoStdLights()
+            depthTest true -enableDepthWrite true
+
+            alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)		
+
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end 
+         end
+
+         pass -fixedFunction        
+            create LightingStatesNoStdLights()
+            fillmode wireframe
+            cullmode none
+            depthTest true -enableDepthWrite false
+            colorScalar (0, 0, 0)
+
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end 
+         end
+
+      end
+   end
+enddef
+
+
+materialDefinition DeckFoundationPreviewPlaceable
+   setDefinition DeckFoundationPreviewMaterial
+   addParam baseColor (0.5, 0.5, 0.0, 0.5)
+end
+
+materialDefinition DeckFoundationPreviewNotPlaceable
+   setDefinition DeckFoundationPreviewMaterial
+   addParam baseColor (1.0, 0.0, 0.0, 0.5)
+end

@@ -1,0 +1,38 @@
+#
+# Common materials for Sims2 and ContentViewer
+#
+
+
+# shader definition files
+
+include "vsFragments.matShad"
+
+include "standard.matShad"
+
+include "predefined.matShad"
+include "water.matShad"
+include "sims.matShad"
+include "overrides.matShad"
+
+
+include "glow.matShad"
+include "overlays.matShad"
+
+# Effects stuff (see GameData/Effects)
+include "Effects/config.matShad"
+
+include "poolWater.matShad"
+include "celShading.matShad"
+include "rug.matShad"
+include "imposters.matShad"
+
+# post-process effects materials (glow etc)
+include "postProcessEffects.matshad"
+
+# reflection materials
+include "reflection.matshad"
+
+
+# Research materials that may need to be removed before
+# ship.
+include "Research/ramp.matShad"

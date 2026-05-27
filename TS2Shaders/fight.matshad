@@ -1,0 +1,67 @@
+#
+# Materials related to fight FX
+#
+
+
+materialDefinition fightCenterHemisphere
+   setDefinition CubeAlphaFalloffTexture
+   addParam stdMatLayer 17
+   addParam stdMatEnvCubeTextureName steamSphere_alphaFalloff5
+   addParam stdMatBaseTextureName fightcenterhemisphere-alpha
+end
+
+materialDefinition fightDustPop
+   setDefinition StandardMaterial
+   addParam stdMatLayer 5
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  0.2
+   addParam stdMatBaseTextureAlphaReplicate true
+   addParam stdMatDiffCoef (1, 1, 0.8)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName brokenLampSmoke
+   addParam stdMatEmissiveCoef (1, 1, 1)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end
+
+materialDefinition fightGroundHemisphere
+   setDefinition CubeAlphaFalloffTexture
+   addParam stdMatLayer 13
+   addParam stdMatEnvCubeTextureName steamSphere_alphaFalloff5
+   addParam stdMatBaseTextureName fightcenterhemisphere-alpha
+end
+
+materialDefinition fighteffectsregistrationgrid_green
+   setDefinition StandardMaterial
+   addParam stdMatAlphaBlendMode none
+   addParam stdMatAlphaMultiplier 1.000000
+   addParam stdMatAlphaRefValue 127
+   addParam stdMatAlphaTestEnabled 0
+   addParam stdMatBaseTextureAlphaReplicate 0
+   addParam stdMatDiffCoef 0.021,1,0
+   addParam stdMatFillMode solid
+   addParam stdMatLayer 0
+   addParam stdMatLightingEnabled 0
+   addParam stdMatMinLightRangeHint 4
+   addParam stdMatSpecCoef 0,0,0
+   addParam stdMatUntexturedDiffAlpha 1
+end
+
+materialDefinition fighteffectsregistrationgrid_red
+   setDefinition StandardMaterial
+   addParam stdMatAlphaBlendMode none
+   addParam stdMatAlphaMultiplier 1.000000
+   addParam stdMatAlphaRefValue 127
+   addParam stdMatAlphaTestEnabled 0
+   addParam stdMatBaseTextureAlphaReplicate 0
+   addParam stdMatDiffCoef 1,0.12,0
+   addParam stdMatEmissiveCoef 0,0,0
+   addParam stdMatFillMode solid
+   addParam stdMatLayer 0
+   addParam stdMatLightingEnabled 0
+   addParam stdMatMinLightRangeHint 4
+   addParam stdMatSpecCoef 0,0,0
+   addParam stdMatUntexturedDiffAlpha 1
+ end

@@ -1,0 +1,542 @@
+#
+# Shaders for the Sims themselves
+#
+# Most Sims shaders (currently) come from the Alias export.
+# However, here are a few special ones.
+#
+
+
+
+# A gray default shader for when we can't find one
+
+materialDefinition defaultSimsShader
+   setDefinition Phong
+   addParam stdMatDiffCoef (.5, .5, .6)
+end
+
+
+# contains the shader pre-create commands for all Sim materials
+define SimsShaderPreCreate()
+   preCreate -viewerRenderType $kRenderTypeNormal -viewerRenderType ($mirrorReflectionsEnabled ? $kRenderTypeMirror : $kRenderTypeNormal) -deformations
+#<
+   preCreate -lights directional 2
+   preCreate -lights directional 2 point 1
+   preCreate -lights directional 2 point 2
+   preCreate -lights directional 2 point 3
+   preCreate -lights directional 2 point 4
+   preCreate -lights directional 2 point 5
+   preCreate -lights directional 2 point 6
+   preCreate -lights directional 2 point 1 spot 1
+   preCreate -lights directional 2 spot  1
+   preCreate -lights directional 5 environmentCube 1
+#>
+enddef
+
+
+# special layer for the censor shader. This ensures that the censor shader can
+# be skipped during the censor render itself. The number is referred to from 
+# C++ code.
+seti kCensorShaderLayer -1
+
+# material to copy from the censor texture to the view target
+define CensorCompositingMaterial()
+   material
+      shader -layer ($kCensorShaderLayer)
+         pass
+            renderTarget viewerRenderTarget
+          
+            # vertex program            
+            shaderProgram -target vertexProgram -method assemble
+               shaderSource
+                  vs_1_1
+                  dcl_position v0
+                  dcl_texcoord v1
+                  
+                  mov oPos, v0
+                  mov oT0.xy, v1
+                  
+               endShaderSource
+            end
+        
+            # pixel program
+            stage
+               texture "CensorTexture"
+         
+               textureFilterHint point point
+               textureAddressing clamp clamp clamp
+         
+               textureBlend select(texture) select(texture)
+            end
+         end
+      end
+   end
+enddef
+
+materialDefinition CensorMaterial
+   setDefinition CensorCompositingMaterial   
+end
+
+
+define PlumbBobAnimatedColor()
+	material
+		attributes
+			attribute myColor float3 (0, 1, 0)
+			attribute myAlpha float1 0.843
+		end
+
+	
+	
+		shader -layer (18 * 17 + 17)
+			
+			validateRenderShaderContext -vertexFormat position	0 required
+			validateRenderShaderContext -vertexFormat normal	0 required
+
+			create DetermineHardwareSupport()
+			create SetupCommonHWShaderVariablesAndPredicates()
+			
+
+			if ($useFixedFunctionPath)
+				pass -fixedFunction
+					create LightingStates()
+					create AttenuatedMatCoef(0.25)
+					fillmode $stdMatFillMode
+
+					depthTest true -enableDepthWrite false
+					alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+
+					stage
+						colorScalar @myColor @myAlpha
+						textureBlend multiplyScale4(diffuse colorScalar) multiply(diffuse colorScalar)
+					end 
+					
+				end # pass
+			else
+
+				# empircally, there are NO lights associated with the plumb bob, so I won't bother to compute them.
+				pass
+				
+					shaderProgram -target vertexProgram -method link
+						create BindsForHardwareVS1Transforms(false false)
+						shaderFragment TransformPositionRigidNoLighting1_1
+						shaderFragment NoLighting1_1
+					end
+					
+					depthTest true -enableDepthWrite false
+					alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+
+					stage
+						colorScalar @myColor @myAlpha
+						textureBlend multiplyScale4(diffuse colorScalar) select(colorScalar)
+					end  #stage
+					
+				end # pass
+			endif
+        
+         
+         
+		end # shader
+	end #material
+   
+enddef
+   
+
+
+# New material for use of new plumb bob
+materialDefinition plumbBob_core
+   setDefinition PlumbBobAnimatedColor
+   addParam      stdMatDiffCoef (1,1,1,1)
+end
+
+
+
+
+
+
+
+#########################################################
+# Sims Shaders
+#
+# These include a version of the standard material 
+# (SimStandardMaterial) that is used for things
+# such as hair and faces, and SimSkin, which is
+# used for a body with composited textures.
+
+
+# Any mesh subsets that use composited textures must be use the following material
+# The aliasshader command tells the mel parser that SimSkin has the same parameters as StandardMaterial
+
+# if compositing is to be used, these are the names of the composited textures
+set   compositeBaseTextureName   ""
+set   compositeBaseTextureParam  ""
+set   compositeSpecTextureName   ""
+set   compositeSpecTextureParam  ""
+set   compositeBumpTextureName   ""
+set   compositeBumpTextureParam  ""
+
+# allow at most 8 base (diffuse) textures to be composited
+set   baseTexture0 ""
+set   baseTexture1 ""
+set   baseTexture2 ""
+set   baseTexture3 ""
+set   baseTexture4 ""
+set   baseTexture5 ""
+set   baseTexture6 ""
+set   baseTexture7 ""
+
+# allow at most 8 specular mask textures to be composited
+set   specTexture0 ""
+set   specTexture1 ""
+set   specTexture2 ""
+set   specTexture3 ""
+set   specTexture4 ""
+set   specTexture5 ""
+set   specTexture6 ""
+set   specTexture7 ""
+
+# allow at most 8 normal map textures to be composited
+set   bumpTexture0 ""
+set   bumpTexture1 ""
+set   bumpTexture2 ""
+set   bumpTexture3 ""
+set   bumpTexture4 ""
+set   bumpTexture5 ""
+set   bumpTexture6 ""
+set   bumpTexture7 ""
+
+# the number of textures to composite
+set   numTexturesToComposite  0
+
+#beginshader SimSkin
+#description The basic material for defining a material that will be composited with Skin.
+#extraparam int  stdMatLayer 0 -32 32 ; attrdescription Layer for drawing, use even for opaque and odd for translucent
+#extraparam enum stdMatAlphaBlendMode  none   (none)   ; Never blended
+#endshader SimSkin
+
+# generic overall hint (ie, in game)
+setb useCPUCompositedTextures true
+
+include DX9SimMaterials.matShad
+include DX8SimMaterials.matShad
+include DX7SimMaterials.matShad
+include SWVSSimMaterials.matShad
+
+# face materials set this to 'true' so that the eyes can move.
+setb eyeGizmoEnable false
+
+# game will set this if in CAS, so all sim materials can composite on the fly.
+setb simSkinFlag false
+setb contentViewer false
+
+
+# This is a fudge factor, what this does is cover up a boo-boo I made.
+# the lighting.txt file was 'tuned' using a DX7 sim material with a 0.4 multiplier, instead of 0.5 (x2 on the blender side to get back to 1.0)
+# what this lead to was a desired look on dx7 cards, but dx8 and dx7 were washed out, being 20% brighter.
+# so this fudge factor scales sims in dx8 and dx9 'down' by this amount to bring them into line with the "broken" dx7.
+# for now, this is a temp fix for E3 2004, but this might live on forever. 
+# in a perfect world, this factor will be removed and the game lighting 're tuned' to use the unscaled lighting.
+# this will probably need to happen anyway, with new materials and lighting models planned in the expansion packs.
+
+setf simMaterialLightingScale 0.8
+
+
+define SimSkin()
+
+	material
+
+	setb simSkinFlag true
+
+	#trace "$currentMaterialName simskin"
+
+	setb hasSecondUV (hasVertexFormat(texcoord, 1))
+	#trace "SIMSKIN $currentMaterialName   UV2: $hasSecondUV Eye: $eyeGizmoEnable"
+	
+		
+		# if it has eyes, then it's a face too.
+		# .x = U shift (up/down) of eye, y = V shift (left/right) of eye, z = left eye stretch, w = right eye stretch
+		# might be switched to a 'look at' vector, so the VS can compute the offsets directly.
+
+   # body may stil get these attributes, but the VS attached to the material only looks at these if a 2nd UV exists and 
+   # eyeGizmoEnable is true.
+   
+	attributes
+      attribute eyeDirection float2 (0, 0)
+		attribute l_eyeStretch float1 (0)
+		attribute r_eyeStretch float1 (0)
+	end
+
+	create SimsShaderPreCreate()    
+	create DetermineHardwareSupport()
+
+	# always composite on the CPU for anything other than dx9.
+	#if ($useSWVertexShaderPath or $useFixedFunctionPath or $useHWShader1Path)
+	#	#trace "Using CPU composited textures"
+	#	setb useCPUCompositedTextures true
+	#endif
+			
+	
+	#if ($useCPUCompositedTextures)
+
+		# pass through base texture name
+		
+		if ($numTexturesToComposite)
+			if (strcmp("${compositeBaseTextureName}", "") != 0)
+				set stdMatBaseTextureName $compositeBaseTextureName
+				set stdMatBaseTextureEnabled true
+			else
+				set stdMatBaseTextureEnabled false
+			endif
+		endif
+      
+		
+		# do nothing is stdMatBaseTextureName is non-null, then just leave it alone...
+		# this is contentViewer case.
+
+		
+								
+		if ($useHWShader2Path and $bumpMapping)
+			if (strcmp("${compositeBumpTextureName}", "") != 0)
+				set stdMatNormalMapTextureName $compositeBumpTextureName
+				setb stdMatNormalMapTextureEnabled true
+			else
+				# if this is null, then make sure stuff is turned off
+				if (strcmp("${stdMatNormalMapTextureName}", "") = 0)
+					setb stdMatNormalMapTextureEnabled false
+				endif
+				
+				#otherwise, leave everything alone, it's a non-compositing simSkin
+				
+			endif
+		endif
+		
+		setb bViewerIsThumbnail (viewerRenderType = $kViewerRenderTypeFamilyThumbnail)			   
+					
+		# we only want to render thumbnails in fixed function and we want to do two passes to correct alpha for the thumbnail
+		if ($useHWShader2Path and not $bViewerIsThumbnail)
+			create CreateSimStandardMaterialDX9()
+		endif
+		
+	#	if ($useHWShader1Path)
+	#		create CreateSimStandardMaterialDX8()
+	#	endif
+		
+		if ($useSWVertexShaderPath)
+			create CreateSimStandardMaterialSWVS()
+		endif
+		
+		if ($useFixedFunctionPath or $useHWShader1Path or ($bViewerIsThumbnail and not $useSWVertexShaderPath))
+			create CreateSimStandardMaterialFixedFunction()
+		endif      
+	#<
+	else
+
+		
+		# backup case for Content viewer, which can have no compositing.
+
+		if (strcmp("${baseTexture0}","") = 0)
+		    # if base is null, then hopefull the stdMatBase/NormalMap names are OK, so send it to SimStandard, which has no layering.
+		    setb contentViewer true
+			create SimStandardMaterial()
+		else
+		
+			if ($useHWShader2Path)
+				#trace "HW2 GPU COMPOSITE: $currentMaterialName"
+				create DX9SimSkinCompositingMaterial()
+			endif
+			
+			
+			if ($useHWShader1Path)
+				#trace "HW1: $currentMaterialName"
+				create CreateSimSkinPerPixelCompositingMaterialPS1()
+			endif
+					
+			
+			if ($useFixedFunctionPath)
+				create CreateSimPerPixelCompositingMaterialFixedFunction()
+			endif
+			
+		endif
+		
+	
+	endif
+	#>
+	
+
+end
+
+enddef
+
+
+
+#set up default params
+setb simHairFlag false
+
+define SimHair()
+   setb simHairFlag true
+	
+	if (strcmp("${baseTexture0}","") = 0 or $numTexturesToComposite = 0)
+		create SimStandardMaterial()
+	else
+		create SimSkin()
+	endif
+	
+enddef
+
+
+
+# Any Sim materials (clothes/skin) that do not use composited textures use
+# the following material. 
+
+#beginshader SimStandardMaterial
+#description Similar to standard material, but used on Sims themselves (fewer options).
+#extraparam enum stdMatAlphaBlendMode  none   (none blend additive)   ; The transparency mode.
+#extraparam bool stdMatAlphaTestEnabled 0        ; Can drop pixels, like a 'mask'
+#extraparam int stdMatAlphaRefValue 127 0 255    ; which alpha value to keep a pixel, 255 is 'white'.
+#extraparam int  stdMatLayer 0 -32 32 ; attrdescription Layer for drawing, use even for opaque and odd for translucent
+#extraparam enum stdMatEnvCubeMode  none  (none reflection)  ; add a reflection layer to this material, will not propogate to SimSkin.
+#endshader SimStandardMaterial
+
+
+
+define SimStandardMaterial()
+
+   
+	create DetermineHardwareSupport()
+
+   setb bViewerIsThumbnail (viewerRenderType = $kViewerRenderTypeFamilyThumbnail)
+	
+	if ($useHWShader2Path and not $bViewerIsThumbnail)
+		create CreateSimStandardMaterialDX9()
+	endif
+		
+
+   if ($useSWVertexShaderPath)
+		create CreateSimStandardMaterialSWVS()
+	endif
+		
+	if ($useFixedFunctionPath or $useHWShader1Path or ($bViewerIsThumbnail and not $useSWVertexShaderPath))
+		create CreateSimStandardMaterialFixedFunction()
+	endif
+		
+
+enddef
+
+
+
+
+
+
+
+define SimMaterialSetup()
+
+
+	validateRenderShaderContext -vertexFormat position	0 required
+	validateRenderShaderContext -vertexFormat normal	0 required
+	validateRenderShaderContext -vertexFormat texcoord	0 required
+
+   # no sim material can have specular, since they might diverse and cause seams.
+   setf stdMatSpecPower 0
+   
+	seti lightingMode $kNoLighting     
+
+	create SetupCommonHWShaderVariablesAndPredicates()
+
+	if (numLightsOfType(${kShapeColorLight}) > 0 ) 
+		seti stdMatShapeColorIndex 0
+		set stdMatAlphaBlendMode blend
+	endif
+		
+	#trace "Light counts: DISTANT: $distantLightCount, POINT: $pointLightCount, SPOT $spotLightCount"
+
+	create BumpTextureCount()
+
+	if ($stdMatNormalMapTextureEnabled = false)
+		seti bumpTextureCount 0
+	endif
+	
+   
+	#trace "Bump texture count: 	$bumpTextureCount"
+	#trace "ShapeColor Index for this Sim Material is: $stdMatShapeColorIndex"
+   
+   create TestForEyeMotion()
+
+				
+enddef
+
+
+
+
+define BumpTextureCount()
+
+	seti bumpTextureCount 0
+
+
+	if ($bumpMapping)
+	
+		if (strcmp("${bumpTexture0}","")!=0)
+			seti bumpTextureCount ($bumpTextureCount +1)
+		endif
+		
+		if (strcmp("${bumpTexture1}","")!=0)
+			seti bumpTextureCount ($bumpTextureCount +1)
+		endif
+
+		if (strcmp("${bumpTexture2}","")!=0)
+			seti bumpTextureCount ($bumpTextureCount +1)
+		endif
+		
+		if (strcmp("${bumpTexture3}","")!=0)
+			seti bumpTextureCount ($bumpTextureCount +1)
+		endif
+
+		if (strcmp("${bumpTexture4}","")!=0)
+			seti bumpTextureCount ($bumpTextureCount +1)
+		endif
+
+		if (strcmp("${bumpTexture5}","")!=0)
+			seti bumpTextureCount ($bumpTextureCount +1)
+		endif
+
+		if (strcmp("${bumpTexture6}","")!=0)
+			seti bumpTextureCount ($bumpTextureCount +1)
+		endif
+
+		if (strcmp("${bumpTexture7}","")!=0)
+			seti bumpTextureCount ($bumpTextureCount +1)
+		endif
+		
+	endif
+
+	setb  hasTangents (hasVertexFormat(tangent,0))
+	
+
+
+enddef
+
+
+#==============================================================================
+# Macro	for	setting	alpha blending and alpha test state	for sim hair materials.
+define SimHairAlphaState(alphaBlendMode)   
+   #trace "SimHairAlphaState: $currentMaterialName, Alpha Blending Mode: &{alphaBlendMode}"
+   if (strcmp("&{alphaBlendMode}", "blend") = 0)
+	  alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+	  depthTest	true -enableDepthWrite true
+	  alphaTest true 60	 	 
+     alphaTestFunction acceptIfGreater	
+   elseif (strcmp("&{alphaBlendMode}", "additive") = 0)
+     alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+	  depthTest	true -enableDepthWrite false
+	  alphaTest $stdMatAlphaTestEnabled $stdMatAlphaRefValue
+     alphaTestFunction acceptIfGreaterOrEqual
+   elseif ($stdMatAlphaTestEnabled)
+	  alphaTest true $stdMatAlphaRefValue
+     alphaTestFunction acceptIfGreaterOrEqual
+   endif
+enddef
+
+
+
+
+
+
+
+

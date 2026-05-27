@@ -1,0 +1,39 @@
+materialDefinition hottubBubblesShader
+   setDefinition TextureAlpha
+   addParam stdMatLightingEnabled false
+   addParam stdMatLayer 5
+   addParam stdMatDiffCoef (1,1,1)
+   addParam stdMatBaseTextureName bubbleParticle-alpha
+end
+
+materialDefinition hottubSplash
+   setDefinition StandardMaterial
+   addParam stdMatLayer 13
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  0.18
+   addParam stdMatBaseTextureAlphaReplicate false
+   addParam stdMatDiffCoef (1, 1, 1)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName hottubsplash
+   addParam stdMatEmissiveCoef (0,0,0)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end
+
+materialDefinition hottubCannonball
+   setDefinition StandardMaterial
+   addParam stdMatLayer 13
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  0.18
+   addParam stdMatBaseTextureAlphaReplicate false
+   addParam stdMatDiffCoef (1, 1, 1)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName hottubsplash
+   addParam stdMatEmissiveCoef (0,0,0)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end

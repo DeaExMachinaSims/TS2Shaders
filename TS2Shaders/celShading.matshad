@@ -1,0 +1,504 @@
+#
+# Cel Shaders
+#
+# Implements a simple cel-shader with diffuse, specular, and edge terms,
+# an outline (using offset normal trick), and environment map. Everything
+# is optional except the diffuse stage. One stage each for diffuse/specular/edge.
+
+
+#beginshader CelShadedMaterial
+#description Simple Cel shader (one light)
+
+#BeginStdAttrBlock
+
+set csRampTexture       "64shade"
+#attrdescription Lookup texture for diffuse intensity.
+
+sete csShadeFilter point (point bilinear)
+#attrdescription Filtering of the shade ramp
+
+sete csColorFilter point (point bilinear)
+#attrdescription Filtering of any color ramp
+
+
+setb csAddSpecular false
+#attrdescription Whether to enable specular intensity term.
+
+set csSpecRampTexture "blackwhite"
+#attrdescription Lookup texture for specular intensity
+
+setf csShininess 100  # min:0 max:10000
+#attrdescription Shininess of specular intensity highlight.
+#attrdescription The shader may be more efficient if you
+#attrdescription leave this at one and use the texture ramp
+#attrdescription to modulate sharpness.
+
+
+setb csAddEdge true
+#attrdescription Whether to enable the edge intensity term.
+
+set csEdgeRampTexture "blackwhite"
+#attrdescription Lookup texture for edge intensity: how much the 
+#attrdescription surface faces the camera. The left of the texture
+#attrdescription faces the camera, the middle is edge-on, and the right 
+#attrdescription faces away. This can be used to provide an outline or fresnel effect.
+
+sete csEdgeFilter point (point bilinear)
+#attrdescription Filtering of the edge ramp
+
+setb csEdgeRampTextureAlphaInvert true
+#attrdescription Whether to invert alpha from edge intensity ramp texture.
+
+setf csEdgeOffset 0.3 # min:-1 max:1
+#attrdescription Applies bias to the edge intensity term,
+#attrdescription shifting it towards the camera (positive) or
+#attrdescription away from the camera (negative).
+
+setf csEdgeLightDamping 0 # min:-1000 max:1000
+#attrdescription Offsets the edge term by diffuse lighting, which has
+#attrdescription the effect of suppressing it in lit areas.
+
+
+setb csRouteColorFromAlpha true
+#attrdescription Whether to use vertex alpha rather than 'v' texture 
+#attrdescription coordinate to select a color ramp.
+
+
+setb csAddOutline false
+#attrdescription Whether to add in an outline
+
+setf csOutlineWidth 0.01 # min:0 max:1
+#attrdescription Width of outline
+
+setv3 csOutlineColor (1, 0.3, 0)
+#attrdescription Color of the outline
+
+setf csOutlineAlpha 1 # min:0 max:1
+#attrdescription Opacity of the outline.
+
+
+setb csAddEnvironmentMap false
+#attrdescription Whether to add in an environment cube map.
+
+set csEnvironmentMapTexture "reflectionoutdoorwater-envcube"
+#attrdescription Environment cube map texture
+
+setv3 csEnvironmentMapTint (1, 1, 1)
+#attrdescription Color to tint the environment map
+
+setf csEnvironmentMapStrength 0.4 # min:0 max:1
+#attrdescription Overall environment map strength
+
+setb csEnvironmentMapCameraRelative false
+#attrdescription Whether cube map is camera relative
+
+setb csParticleMode false
+#attrdescription Whether material should respect particle attributes
+
+seti  csMatLayer 0 # min:-32 max:32
+#attrdescription Layer for drawing. Higher numbers are drawn later.
+
+
+setb csUseCameraLight true
+#attrdescription Whether to use the given camera light instead of normal
+#attrdescription lighting.
+
+setv4 csCameraLightDir (1, 0, 0.5, 0)
+#attrdescription Direction of camera light
+
+
+#EndStdAttrBlock
+
+define CelShadedMaterial()
+   material
+      create DetermineHardwareSupport()	         
+	   if ($useFixedFunctionPath or $useSWVertexShaderPath)
+		   shader -layer ($csMatLayer * 8)
+		      pass -fixedFunction
+               colorScalar $csOutlineColor $csOutlineAlpha
+               create LightingStates()
+               stage                  
+                  texture $csRampTexture
+                  textureBlend multiply(texture diffuse) select(texture)
+               end
+		      end
+		   end
+	   else
+		   create CelShadedMaterialRender()
+	   endif		
+	end
+enddef
+
+define CelShadedMaterialRender()   
+   # Debugging
+   #set csAddEdge false
+   #set csAddSpecular true
+   #set csRampTexture blackwhite
+   #set csRouteColorFromAlpha false
+   #set csAddEnvironmentMap false 
+   #setb csAddOutline false
+   #setf csOutlineWidth 0.1
+   #setf csOutlineAlpha 1
+   #setb csParticleMode true
+   #set csSpecRampTexture "blackwhite"
+   #setf csShininess 1
+   #set stdMatBaseTextureEnabled false
+   #set stdMatDiffCoef (0, 0, 0)
+   #set stdMatFillMode wireframe
+
+   if ($csParticleMode)
+      attributes
+         attribute colorAlpha4 float4
+         attribute scale4      float4
+         attribute info4       float4
+      end
+   endif
+   
+		            
+   shader -layer ($csMatLayer * 8)
+      if (not hasVertexFormat(color, 0))
+         set csRouteColorFromAlpha false
+      endif
+      
+      vertexFormatPred position      0 true
+      vertexFormatPred normal        0 true
+      if ($stdMatBaseTextureEnabled)
+         vertexFormatPred texcoord   0 true
+      endif
+      vertexFormatPred color         0 $csRouteColorFromAlpha
+   
+      	create SetupSkinningStateAndPredicates()
+		create SetupMorphingStateAndPredicates()
+
+      if ($csAddOutline) 
+         pass               
+         
+            if ($doSkinning or $doMorphing)
+               create PreprocessVertexShader()
+            endif
+            
+            
+            # was create VS_NormalOffsetProgram($csOutlineWidth)
+            shaderProgram -target vertexProgram -method assemble
+
+               bindConstants 0  -bindingID geomToCamera        -constantCount 3
+               bindConstants 3  -bindingID cameraToClip        -constantCount 4
+               bindConstants 7  -bindingID immediateData       -data ($csOutlineWidth, 1, 0.005, 1)
+               if ($csParticleMode)
+                  bindConstants 8  -bindingID immediateData    -data @scale4
+                  bindConstants 9  -bindingID immediateData    -data @info4 
+               endif
+               
+               shaderSource
+                  vs_1_1
+                  dcl_position0 v0
+                  dcl_normal0   v1
+                  
+                  # transform normal to camera space
+                  mov  r3, c7       # so we can multiply below if in particle mode
+                  mov  r0.w, r3.w
+                  m3x3 r0,   v1, c0
+               endShaderSource
+               
+               if ($csParticleMode)
+                  shaderSource
+                     mul  r1,   c8,  v0
+                     m4x3 r2,   r1,  c0         # position in camera space.                     
+                     mul  r3.x, r3.x, c9.z      # aspect from info4
+                  endShaderSource
+               else
+                  shaderSource   "m4x3 r2, v0,  c0"         # position in camera space.
+               endif
+                  
+               shaderSource
+                  mov  r2.w, r3.w
+                  mad  r2,   r0,  r3.x, r2      # add offset.
+                  #mul  r2.y, r2.y, c7.y      # cheat away from the camera in camera space.
+         
+                  m4x4 r3, r2, c3               # to clip space.
+                  mad  r3.z, r3.w, c7.z, r3.z   # cheat back depth in clip space: z' += eps, -> z += eps * w. 
+                  mov oPos, r3
+               endShaderSource
+            end
+            
+            create NonStandardLighting()
+            
+            alphaBlend srcFactor(one) add dstFactor(zero)
+            depthTest true -enableDepthWrite true
+            depthTestFunction acceptIfLess
+            cullmode cullCounterClockwise
+            if ($csOutlineAlpha < 1)
+               alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+            endif
+            fillmode $stdMatFillMode
+            
+            colorScalar $csOutlineColor $csOutlineAlpha
+            stage                  
+               textureBlend select(colorScalar) select(colorScalar)
+            end
+         end
+      endif
+      
+      # MAIN CEL SHADER PASS
+      pass
+         if (not $csAddOutline)
+            create PreprocessVertexShader()
+         endif
+         
+         seti ts 1
+         if ($stdMatBaseTextureEnabled)
+            seti texReg $ts
+            seti ts ($ts + 1)
+         endif
+         if ($csAddEdge)
+            seti edgeReg $ts
+            seti ts ($ts + 1)
+         endif
+         if ($csAddSpecular)
+            seti specReg $ts
+         endif
+
+         shaderProgram -target vertexProgram -method assemble
+            
+            bindConstants 0  -bindingID geomToClip          -constantCount 4
+            bindConstants 4  -bindingID geomToCamera        -constantCount 3
+            bindConstants 7  -bindingID immediateData       -data ($csEdgeOffset, $csShininess, 0.5, 1)
+            bindConstants 8  -bindingID immediateData       -data ($csEdgeLightDamping, 0, 0, 0)
+            
+            if ($csUseCameraLight)
+               bindConstants 10 -data $csCameraLightDir
+            else
+               bindConstants 10 -bindingID camLocalToDirLight1 -constantCount 1
+            endif
+            
+            if ($csParticleMode)
+               bindConstants 11 -bindingID immediateData    -data @colorAlpha4
+               bindConstants 12 -bindingID immediateData    -data @scale4
+            endif
+            
+            shaderSource 
+               vs_1_1
+               dcl_position0 v0
+               dcl_normal0   v1
+               dcl_texcoord0 v2
+            endShaderSource
+
+            if (hasVertexFormat(texcoord, 1))
+               shaderSource "dcl_texcoord1 v3"
+            endif
+
+            if ($csRouteColorFromAlpha)
+               shaderSource "dcl_color0 v4"
+            endif
+               
+            # r0 = N
+            # r1 = H
+            # r2 = E
+            # r3 = scratch
+            # r4 = local position
+            
+            if ($csParticleMode)
+               shaderSource "mul r4, v0, c12"
+            else
+               shaderSource "mov r4, v0"
+            endif
+            
+            shaderSource                  
+               # transform position
+               m4x4 oPos, r4, c0
+               
+               # transform normal to camera space
+               mov r0.w, c7.w
+               m3x3 r0, v1, c4
+               
+               # N.L in camera space.
+               dp3 r3.x, r0, c10
+
+               # position in camera space
+               mov r2.w, c7.w
+               m4x3 r2, r4, c4
+
+               # vector from point to eye, E
+               mov r2, -r2
+
+               # normalize E
+               # create VS_Normalize(r2 r2)
+                  dp3 r2.w, r2,    r2
+                  rsq r2.w, r2.w
+                  mul r2,   r2,    r2.w
+
+               # find H = (L + E) / 2
+               add r1, c10, r2
+               mul r1, r1, c7.z
+
+               # normalize H
+               # create VS_Normalize(r1 r1)
+                  dp3 r1, r1,    r1
+                  rsq r1, r1.w
+                  mul r1, r1,    r1.w
+               
+               # N.H in camera space.
+               dp3 r3.y, r0, r1
+
+               # lit: (N.L) (N.S) -> clamped diff and spec
+               # exponent
+               mov r3.w, c7.y   
+               lit r1, r3
+               
+               # diffuse intensity
+               mov oT0.x, r1.y    
+            endShaderSource
+            
+            if ($csRouteColorFromAlpha)
+               shaderSource "mov oT0.y, v4.w"    # pass through color0 alpha
+            else
+               if ($stdMatBaseTextureEnabled and (hasVertexFormat(texcoord, 1)))
+                  shaderSource "mov oT0.y, v3.y"    # pass through t1.v
+               else
+                  shaderSource "mov oT0.y, v2.y"    # pass through t0.v
+               endif
+            endif
+            if ($stdMatBaseTextureEnabled)
+               shaderSource "mov oT${texReg}, v2"
+            endif
+            if ($csAddEdge)
+               shaderSource "dp3 r3, r0, r2"                    # N . E    
+               if ($csEdgeLightDamping != 0)
+                  shaderSource "mad r3, r1.y, c8.x, r3"         # offset by scaled diffuse term
+               endif
+               shaderSource "add oT${edgeReg}.x, c7.x, r3.x"    # edge intensity + k
+            endif
+            if ($csAddSpecular)
+               shaderSource "mov oT${specReg}.x, r1.z"          # specular intensity
+            endif
+            if ($csParticleMode)
+               shaderSource "mov oD0, c11"          # particle colour/alpha
+            endif
+         end
+
+         #######################################################
+         
+         create NonStandardLighting()
+            
+         if ($csAddOutline) 
+            depthTestFunction acceptIfLessOrEqual
+         endif
+
+         if ($stdMatBaseTextureEnabled)
+            if ($csUseCameraLight)
+               colorScalar ($stdMatDiffCoef * (0.25).xxx)
+            else
+               colorScalar -lightRadiance directional 0 ($stdMatDiffCoef * (0.25).xxx)
+            endif
+            
+         else
+            if ($csUseCameraLight)
+               colorScalar $stdMatDiffCoef            
+            else
+               colorScalar -lightRadiance directional 0 $stdMatDiffCoef            
+            endif               
+         endif
+
+         if ($csParticleMode)
+            alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+         endif
+         
+         fillmode $stdMatFillMode
+            
+         stage
+            texture $csRampTexture 
+            textureMIPFilterHint disabled
+            textureFilterHint $csShadeFilter $csColorFilter
+            textureAddressing clamp clamp
+            textureBlend multiply(texture colorScalar) select(texture)
+         end
+         if ($stdMatBaseTextureEnabled)
+            # base texture stage
+            stage
+               texture $stdMatBaseTextureName
+               textureAddressing $stdMatBaseTextureAddressingU $stdMatBaseTextureAddressingV $stdMatBaseTextureAddressingW
+
+               textureBlend multiplyScale4(texture outRegister) multiply(texture outRegister)
+            end
+         endif
+         if ($csParticleMode) 
+            stage
+               textureBlend multiply(outRegister diffuse) multiply(outRegister diffuse)
+            end
+         endif
+         if ($csAddEdge)
+            stage
+               texture $csEdgeRampTexture
+               textureAddressing clamp clamp
+               textureFilterHint $csEdgeFilter $csEdgeFilter
+               if ($csEdgeRampTextureAlphaInvert)
+                  textureBlend lerpTextureAlpha(outRegister texture) select(outRegister)
+               else
+                  textureBlend lerpTextureAlpha(texture outRegister) select(outRegister)
+               endif
+            end
+         endif
+         if ($csAddSpecular)
+            stage
+               texture $csSpecRampTexture
+               textureMIPFilterHint disabled
+               textureFilterHint bilinear bilinear # $csShadeFilter $csColorFilter
+               textureAddressing clamp clamp
+               textureBlend lerpTextureAlpha(texture outRegister) select(outRegister)
+            end
+         endif
+      end
+      if ($csAddEnvironmentMap)
+         pass
+            alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+            depthTest true -enableDepthWrite false
+            depthTestFunction acceptIfEqual
+
+            # we must use a vertex program again, or we'll get inconsistent
+            # depth results with the previous pass.
+            shaderProgram
+               
+               bindConstants 0  -bindingID geomToClip        -constantCount 4
+               bindConstants 4  -bindingID geomToCamera      -constantCount 3
+               bindConstants 7  -bindingID immediateData     -data (0, 0, 0, 1)
+               
+               shaderSource 
+                  vs_1_1
+                  dcl_position0 v0
+                  dcl_normal0   v1
+                  
+                  m4x4 oPos, v0, c0
+               endShaderSource
+               
+               if ($csEnvironmentMapCameraRelative)
+                  shaderSource
+                     # transform normal to camera space
+                     mov r0.w, c7.w
+                     m3x3 r0, v1, c4
+
+                     # look up cube map.
+                     mov oT0, r0
+                  endShaderSource
+               else
+                  shaderSource "mov oT0, v1"
+               endif
+            end
+            
+            colorScalar $csEnvironmentMapTint $csEnvironmentMapStrength
+            
+            fillmode $stdMatFillMode
+            
+            stage
+               texture $csEnvironmentMapTexture
+               textureMIPFilterHint disabled
+               textureFilterHint bilinear bilinear
+               textureAddressing clamp clamp clamp
+               
+               textureBlend multiply(texture colorScalar) multiply(texture colorScalar)
+            end
+         end
+      endif
+   end
+enddef
+
+#endshader CelShadedMaterial

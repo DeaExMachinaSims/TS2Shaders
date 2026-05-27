@@ -1,0 +1,109 @@
+#
+# Materials used for lamps, mostly for broken states
+#
+
+materialDefinition brokenLampSparkFlash
+   setDefinition StandardMaterial
+   addParam stdMatLayer 5
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode additive
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  3
+   addParam stdMatBaseTextureAlphaReplicate true
+   addParam stdMatDiffCoef (1, 1, 1)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName fireflyParticle-alpha
+   addParam stdMatEmissiveCoef (1, 1, 1)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end
+
+
+materialDefinition sparks
+   setDefinition StandardMaterial
+   addParam stdMatLayer 5
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode additive
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  3
+   addParam stdMatBaseTextureAlphaReplicate true
+   addParam stdMatDiffCoef (0.85, 0.7, .46)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName fireflyParticle-alpha
+   addParam stdMatEmissiveCoef (0.8,0.56, .46)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end
+
+
+materialDefinition brokenLampSmoke2
+   setDefinition StandardMaterial
+   addParam stdMatLayer 9
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  0.08
+   addParam stdMatBaseTextureAlphaReplicate false
+   addParam stdMatDiffCoef (0.85, 0.7, .46)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName brokenLampSmoke
+   addParam stdMatEmissiveCoef (0.8,0.56, .46)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end
+
+
+materialDefinition brokenLampSmoke
+   setDefinition StandardMaterial
+   addParam stdMatLayer 15
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  0.1 
+   addParam stdMatBaseTextureAlphaReplicate false
+   addParam stdMatDiffCoef (.388, .312, .204)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName brokenLampSmoke
+   addParam stdMatEmissiveCoef (388, .312, .204)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end
+
+
+materialDefinition brokenLampFlash
+   setDefinition StandardMaterial
+   addParam stdMatLayer 19
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode additive
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  3
+   addParam stdMatBaseTextureAlphaReplicate true
+   addParam stdMatDiffCoef (1, 1, 1)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName brokenlampflash-alpha
+   addParam stdMatEmissiveCoef (1, 1, 1)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end
+
+
+materialDefinition brokenLampElectricalArcs
+   setDefinition StandardMaterial
+   addParam stdMatLayer 13
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode additive
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  3
+   addParam stdMatBaseTextureAlphaReplicate true
+   addParam stdMatDiffCoef (1, 1, 1)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName brokenlampelectricalarcs
+   addParam stdMatEmissiveCoef (1, 1, 1)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end
+
+
+
+
+

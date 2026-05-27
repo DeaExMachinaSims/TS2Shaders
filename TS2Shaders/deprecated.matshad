@@ -1,0 +1,497 @@
+#
+# Graveyard of deprecated material definitions.
+#
+
+#---------------------------------------------------------------------------
+# The following shaders have been superseded by the new StandardMaterial
+# definition.
+# MarkL 12/10/02 and 12/17/02
+#---------------------------------------------------------------------------
+
+seti alphaRefValue 0
+setf blendStrength 1
+setf shininess   0
+
+# deprecated materials use the following value to reverse an undesired multiplication in go2sco. This
+# default value is set in case go2sco hasn't written out the value for some reason.
+set  deprecatedStdMatInvDiffuseCoeffMultiplier 1
+
+# --- TextureAlpha -------------------------------------------------------------------------
+define TextureAlpha()
+   material
+      shader -layer ($stdMatLayer * 18 + 17)
+         vertexFormatPred position 0 true
+         vertexFormatPred texcoord 0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+            depthTest true -enableDepthWrite false
+            colorScalar $stdMatDiffCoef
+            fillmode $stdMatFillMode            
+
+            stage
+               texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+               textureBlend select(colorScalar) multiply(texture colorScalar)
+            end
+         end
+      end
+   end
+enddef
+
+
+# --- PhongShaders -------------------------------------------------------------------------
+define Phong()
+   material
+      create PhongShaders()
+   end
+enddef
+
+define PhongShaders()
+   setb stdMatBaseTextureEnabled      false
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongAlphaShaders -------------------------------------------------------------------------
+define PhongAlpha()
+   material
+      create PhongAlphaShaders()
+   end
+enddef
+
+define PhongAlphaShaders()
+   set stdMatAlphaBlendMode blend
+   setf stdMatAlphaMultiplier (($stdMatDiffCoef).w)
+   setb stdMatBaseTextureEnabled      false
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongTextureShaders -------------------------------------------------------------------------
+define PhongTexture()
+   material
+      create PhongTextureShaders()
+   end
+enddef
+
+define PhongTextureShaders()
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongTextureMaskShaders -------------------------------------------------------------------------
+define PhongTextureMask()
+   material
+      create PhongTextureMaskShaders()
+   end
+enddef
+
+define PhongTextureMaskShaders()
+   setb stdMatAlphaTestEnabled true
+   set stdMatAlphaRefValue $alphaRefValue
+   setf stdMatAlphaMultiplier (($stdMatDiffCoef).w)
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongTextureAlphaShaders -------------------------------------------------------------------------
+define PhongTextureAlpha()
+   material
+      create PhongTextureAlphaShaders()
+   end
+enddef
+
+define PhongTextureAlphaShaders()
+   set stdMatAlphaBlendMode blend
+   setf stdMatAlphaMultiplier (($stdMatDiffCoef).w)
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongTextureSpecShaders -------------------------------------------------------------------------
+define PhongTextureSpec()
+   material
+      create PhongTextureSpecShaders()
+   end
+enddef
+
+define PhongTextureSpecShaders()
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled true
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongTextureSpecMaskShaders -------------------------------------------------------------------------
+define PhongTextureSpecMask()
+   material
+      create PhongTextureSpecMaskShaders()
+   end
+enddef
+
+define PhongTextureSpecMaskShaders()
+   setb stdMatAlphaTestEnabled true
+   set stdMatAlphaRefValue $alphaRefValue
+   setf stdMatAlphaMultiplier (($stdMatDiffCoef).w)
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled true
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- UnlitTextureShaders ----------------------------------------------------
+define UnlitTexture()
+   material
+      create UnlitTextureShaders()
+   end
+enddef
+
+define UnlitTextureShaders()
+   set stdMatLightingEnabled false
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- UnlitTextureAlphaShaders -------------------------------------------------------------------------
+define UnlitTextureAlpha()
+   material
+      create UnlitTextureAlphaShaders()
+   end
+enddef
+
+define UnlitTextureAlphaShaders()
+   set stdMatLightingEnabled false
+   set stdMatAlphaBlendMode blend
+   setf stdMatAlphaMultiplier (($stdMatDiffCoef).w)
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- AdditiveTextureBlendShaders -------------------------------------------------------------------------
+define AdditiveTextureBlend()
+   material
+      create AdditiveTextureBlendShaders()
+   end
+enddef
+
+define AdditiveTextureBlendShaders()
+   set stdMatLightingEnabled false
+   set stdMatAlphaBlendMode additive
+   setf stdMatAlphaMultiplier ($blendStrength)
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- AdditiveTextureAlphaBlendShaders -------------------------------------------------------------------------
+define AdditiveTextureAlphaBlend()
+   material
+      create AdditiveTextureAlphaBlendShaders()
+   end
+enddef
+
+define AdditiveTextureAlphaBlendShaders()
+   set stdMatLightingEnabled false
+   set stdMatAlphaBlendMode additive
+   setf stdMatAlphaMultiplier ($blendStrength)
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   setb stdMatBaseTextureAlphaReplicate true
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongTextureBumpShaders -------------------------------------------------------------------------
+define PhongTextureBump()
+   material
+      create PhongTextureBumpShaders()
+   end
+enddef
+
+define PhongTextureBumpShaders()
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled true
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongTextureMaskBumpShaders -------------------------------------------------------------------------
+define PhongTextureMaskBump()
+   material
+      create PhongTextureMaskBumpShaders()
+   end
+enddef
+
+define PhongTextureMaskBumpShaders()
+   setb stdMatAlphaTestEnabled true
+   set stdMatAlphaRefValue $alphaRefValue
+   setf stdMatAlphaMultiplier (($stdMatDiffCoef).w)
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled true
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongTextureCubeMapReflectionShaders -------------------------------------------------------------------------
+define PhongTextureCubeMapReflection()
+   material
+      create PhongTextureCubeMapReflectionShaders()
+   end
+enddef
+
+define PhongTextureCubeMapReflectionShaders()
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set stdMatEnvCubeMode reflection
+   set stdMatEnvCubeBlurFactor $blurFactor
+   set stdMatEnvCubeCoef (($stdMatSpecCoef) * ($reflectivity,$reflectivity,$reflectivity))
+   set  stdMatDiffCoef   ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+
+# --- PhongAlphaCubeMapReflectionShaders -------------------------------------------------------------------------
+define PhongAlphaCubeMapReflection()
+   material
+      create PhongAlphaCubeMapReflectionShaders()
+   end
+enddef
+
+define PhongAlphaCubeMapReflectionShaders()
+   set stdMatAlphaBlendMode blend
+   setf stdMatAlphaMultiplier (($stdMatDiffCoef).w)
+   set stdMatEnvCubeMode reflection
+   set stdMatEnvCubeBlurFactor $blurFactor
+   set stdMatEnvCubeCoef (($stdMatSpecCoef) * ($reflectivity,$reflectivity,$reflectivity))
+   setb stdMatBaseTextureEnabled      false
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set  stdMatDiffCoef                ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongTextureAlphaCubeMapReflectionShaders -------------------------------------------------------------------------
+define PhongTextureAlphaCubeMapReflection()
+   material
+      create PhongTextureAlphaCubeMapReflectionShaders()
+   end
+enddef
+
+define PhongTextureAlphaCubeMapReflectionShaders()
+   set stdMatAlphaBlendMode blend
+   setf stdMatAlphaMultiplier (($stdMatDiffCoef).w)
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set stdMatEnvCubeMode reflection
+   set stdMatEnvCubeBlurFactor $blurFactor
+   set stdMatEnvCubeCoef (($stdMatSpecCoef) * ($reflectivity,$reflectivity,$reflectivity))
+   set  stdMatDiffCoef   ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+
+# --- PhongTextureCubeMapIlluminationShaders -------------------------------------------------------------------------
+define PhongTextureCubeMapIllumination()
+   material
+      create PhongTextureCubeMapIlluminationShaders()
+   end
+enddef
+
+define PhongTextureCubeMapIlluminationShaders()
+   setb stdMatBaseTextureEnabled true
+   setb stdMatSpecMaskTextureEnabled  false
+   setb stdMatNormalMapTextureEnabled false
+   set stdMatEnvCubeMode diffuseRadiance
+   set stdMatEnvCubeBlurFactor $blurFactor
+   set stdMatEnvCubeCoef ($reflectivity,$reflectivity,$reflectivity)
+   set  stdMatDiffCoef   ($stdMatDiffCoef * ($deprecatedStdMatInvDiffuseCoeffMultiplier).xxx)
+   create StandardShaders()
+enddef
+
+define CubeMapReflection()
+   material
+      shader -layer ($stdMatLayer * 18)
+         vertexFormatPred position 0 true
+         vertexFormatPred normal   0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLightsParam(true true)
+
+            colorScalar $stdMatSpecCoef
+            fillmode $stdMatFillMode
+
+            stage
+               texture $stdMatEnvCubeTextureName
+               textureMIPFilterHint linear $blurFactor
+
+               ffTextureCoordsSource fromReflectionVector
+               textureTransformType vector3
+               ffTextureMatrix -orientCameraToGlobal
+
+               textureAddressing clamp clamp clamp
+
+               textureBlend multiply(texture colorScalar) select(colorScalar)
+            end
+         end
+      end
+   end
+enddef
+
+
+setf playSpeed 10
+
+setf playSpeed 15
+setf resFactor 16
+setf tileCountU 16
+setf tileCountV 1
+define AnimatedTexture()
+  material
+     shader
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+        pass -fixedFunction -modifiedEachFrameHint
+           create LightingStatesNoStdLights()
+           fillmode $stdMatFillMode
+           stage
+              texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+              textureTileAnimation $playSpeed -tiles ($tileCountU, $tileCountV) -targetType fixedFunction
+              textureBlend select(texture) select(texture)
+           end
+        end
+     end
+  end
+enddef
+
+
+setf playSpeed 15
+setf resFactor 16
+setf tileCountU 16
+setf tileCountV 1
+define AnimatedTextureAlpha()
+  material
+     shader -layer ($stdMatLayer * 18 + 17)
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+        pass -fixedFunction  -modifiedEachFrameHint
+           create LightingStatesNoStdLights()
+           alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+           depthTest true -enableDepthWrite false
+           fillmode $stdMatFillMode
+           
+           stage
+              texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+              textureTileAnimation $playSpeed -tiles ($tileCountU, $tileCountV) -targetType fixedFunction
+              textureBlend select(texture) select(texture)
+           end
+        end
+     end
+  end
+enddef
+
+
+seti defaultLayer  0
+seti defaultAlphaLayer 17
+seti defaultTranslucentLayer 17
+
+#---------------------------------------------------------------------------
+# Old shader
+# This was defined as a floor tile shader with a spec map pass, but it did
+# not differ from the standard floor tile shader...
+# MarkL 6/21/02
+#---------------------------------------------------------------------------
+
+define FloorSpec()
+   create Floor()
+enddef
+
+
+#---------------------------------------------------------------------------
+# Old shaders
+# These are kept in this file for compatibility
+# MarkL 6/3/02
+#---------------------------------------------------------------------------
+
+define SteamPlume()
+   create PhongTexture()
+enddef
+
+define SteamTop()
+   create PhongTexture()
+enddef
+
+
+#---------------------------------------------------------------------------
+# Old shaders
+# These are kept in this file for compatibility following a name
+# change on 30Mar02.  The new names are "Phong", "PhongTexture", etc.
+# Leo 25Apr02 -- Since these are deprecated, removed #beginshader comments
+#---------------------------------------------------------------------------
+
+define DiffuseMaterial()  #referenced from Go2SCO and *.ma files
+  material
+     create PhongShaders()
+  end
+enddef
+define DiffuseAlphaMaterial()   #referenced from Go2SCO only
+  material
+     create PhongAlphaShaders()
+  end
+enddef
+define BaseTextureMaterial() #referenced from .ma files
+   create PhongTexture()
+enddef
+define BaseTextureAlphaMaterial()  #referenced from Go2SCO and *.ma files
+  material
+     create PhongTextureAlphaShaders()
+  end
+enddef
+

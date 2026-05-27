@@ -1,0 +1,61 @@
+#
+# Various custom water effect materials
+#
+
+
+materialDefinition fountain_spoutShader
+   setDefinition TextureAlpha
+   addParam stdMatLayer 13
+   addParam stdMatDiffCoef (0.8, 0.8, 0.9)
+   addParam stdMatBaseTextureName bubbleParticle-alpha
+end
+
+materialDefinition waterfaucet_waterstream
+   setDefinition StandardMaterial
+   addParam stdMatLayer 61
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode blend
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  3
+   addParam stdMatBaseTextureAlphaReplicate false
+   addParam stdMatDiffCoef (.9, .9, .9)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName waterfaucet-waterstream
+   addParam stdMatEmissiveCoef (0,0,0)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end
+
+materialDefinition waterfaucet_underwaterwaterdispersion
+   setDefinition StandardMaterial
+   addParam stdMatLayer 0
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode additive
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier 3 
+   addParam stdMatBaseTextureAlphaReplicate false
+   addParam stdMatDiffCoef (1, 1, 1)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName waterfaucet-underwaterwaterdispersion
+   addParam stdMatEmissiveCoef (0,0,0)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end
+
+# This used to be called bugZapperFireFlies. Renaming it since bugZapperFireflies material now exists as a 
+# separate file and is being used to test custom content.
+materialDefinition lightningSpark
+   setDefinition StandardMaterial
+   addParam stdMatLayer 5
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode additive
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier  3
+   addParam stdMatBaseTextureAlphaReplicate true
+   addParam stdMatDiffCoef (0.85, 0.7, 0)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName fireflyParticle-alpha
+   addParam stdMatEmissiveCoef (0.8,0.56,0)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end

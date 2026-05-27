@@ -1,0 +1,106 @@
+#
+# Various shaders for rendering shadows
+#
+
+
+
+# want to draw the shadow proper after standard opaque stuff.
+seti simShadowLayer 1
+
+# Enable to see the shadow more clearly.
+setb simShadowDebug false
+
+
+# --- Sim Shadow shader for the main render --------------------------------------------------------
+
+define ShadowShader()
+   material
+      shader -layer ($simShadowLayer * 8)
+         vertexFormatPred position 0 true
+         vertexFormatPred texcoord 0 true
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            
+            ffMatCoef -amb $stdMatDiffCoef -diff $stdMatDiffCoef -emit $stdMatEmissiveCoef -spec $stdMatSpecCoef -specPow $stdMatSpecPower
+            addSpecular false
+
+            if ($simShadowDebug)
+               alphaBlend srcFactor(one) add dstFactor(zero)
+            else
+               alphaBlend srcFactor(destColor) add dstFactor(zero)
+            endif
+            
+            depthTest true -enableDepthWrite false
+            fillmode $stdMatFillMode
+
+            stage
+               texture $stdMatBaseTextureName
+               textureAddressing clamp clamp clamp
+               textureMIPFilterHint disabled
+               ffTextureCoordsSource 0
+               textureBlend select(texture) select(texture)
+            end 
+         end
+      end
+   end
+enddef
+
+# First pass at material for projective shadow texturing
+setc shadowColor (0.5, 0.5, 0.7)
+setf shadowStrength 0.8
+define ProjectiveShadowDef()
+   material
+      shader -layer 0
+         vertexFormatPred position 0 true
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            
+            addSpecular false
+
+            alphaBlend srcFactor(one) add dstFactor(invSrcAlpha)
+            
+            fillmode $stdMatFillMode
+
+            colorScalar $shadowColor $shadowStrength
+            tsUserLight projectiveTextureLight 0
+
+            stage
+               texture reggrid2
+               textureAddressing clamp clamp
+               textureMIPFilterHint disabled
+               textureBlend multiply(colorScalar texture:alphaReplicate) multiply(colorScalar texture)
+            end 
+            
+            # apply mask to prevent repeat off to infinity.
+            stage
+               texture overlayMask
+               textureFilterHint point point
+               textureAddressing clamp clamp
+               textureBlend select(outRegister) multiply(texture outRegister)
+            end
+         end
+      end
+      # do nothing fallback shader, in case the device does not support projective textures (Pixomatic)
+      shader
+      end
+   end
+enddef
+ 
+
+materialDefinition ProjectiveShadow
+   setDefinition ProjectiveShadowDef
+end
+
+# Called by code to create this material, to avoid referencing
+# tsUserLight if not necessary.
+define FamilyThumbnailShadowMaterial()
+   materialDefinition FamilyThumbnailShadow
+      setDefinition ProjectiveShadowDef
+      addParam shadowColor (0, 0, 0)
+      addParam shadowStrength 0.50
+      # read by code:
+      addParam lightDirection (0.2, 1, 2)
+   end
+enddef

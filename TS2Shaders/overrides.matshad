@@ -1,0 +1,10 @@
+#
+# Temporary explicit material definitions.
+#
+
+materialDefinition fireplaceLargeWood_fireAnim
+   setDefinition AnimatedTexture
+   addParam tileCountU 14
+   addParam playSpeed 15
+   addParam stdMatBaseTextureName fireplace-fire48all
+end

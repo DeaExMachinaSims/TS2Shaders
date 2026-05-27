@@ -1,0 +1,124 @@
+#
+# Various shaders used by effect system components
+# (Also see particles.matShad.)
+#
+
+define ScreenEffectMaterial()
+   material
+      attributes
+         attribute color float3
+         attribute alpha float1
+      end
+
+      shader -layer 327
+         vertexFormatPred position     0 true
+
+         pass
+            if (varExists(screenEffectTexture))
+               create ScreenTextureQuadVertexProgram()
+            else
+               create ScreenQuadVertexProgram()
+            endif
+            
+            alphaBlend srcFactor(${srcBlendMode}) add dstFactor(${dstBlendMode})
+            depthTest false -enableDepthWrite false
+            alphaTest true 0
+            alphaTestFunction acceptIfGreater
+            colorScalar @color @alpha
+            
+            stage
+               if (varExists(screenEffectTexture))
+                  texture $screenEffectTexture
+   
+                  textureAddressing clamp clamp clamp
+                  textureBlend multiply(texture colorScalar) multiply(texture colorScalar)
+               else               
+                  textureBlend select(colorScalar) select(colorScalar)
+               endif
+            end               
+         end
+      end
+   end
+enddef
+
+define ScreenEffectSkyboxMaterial()
+   material
+      attributes
+         attribute color float3
+         attribute alpha float1
+      end
+
+      shader -layer (-100)
+         vertexFormatPred position 0 true                 
+         create DetermineHardwareSupport()
+         
+         pass -renderEachFrame
+            create ScreenQuadVertexProgram()
+
+            cullmode none
+            alphaBlend srcFactor(${srcBlendMode}) add dstFactor(${dstBlendMode})
+            depthTest true -enableDepthWrite false   #depth test needed for dirty rects to work properly                                                
+            
+            if ($cubeMapSupport)            
+               colorScalar @color @alpha               
+            else               
+               colorScalar(0.3, 0.3, 0.65, 1.0)
+            endif
+
+            stage                              
+               if ($cubeMapSupport)                  
+                  if (varExists(screenEffectTexture))                                       
+                     texture $screenEffectTexture                     
+                     textureMIPFilterHint disabled     
+                     textureAddressing clamp clamp clamp
+                     textureBlend multiply(texture colorScalar) select(colorScalar texture)
+                  else               
+                     textureBlend select(colorScalar) select(colorScalar)
+                  endif
+               else                  
+                  textureBlend select(colorScalar) select(colorScalar)
+               endif
+            end
+         end
+      end
+   end
+enddef
+
+
+materialDefinition screenEffectAdditiveQuad
+   setDefinition ScreenEffectMaterial
+   addParam srcBlendMode srcAlpha
+   addParam dstBlendMode one
+end
+ 
+materialDefinition screenEffectBlendQuad
+   setDefinition ScreenEffectMaterial
+   addParam srcBlendMode srcAlpha
+   addParam dstBlendMode invSrcAlpha
+end
+
+materialDefinition screenEffectTintQuad
+   setDefinition ScreenEffectMaterial
+   addParam srcBlendMode destColor
+   addParam dstBlendMode zero
+end
+
+materialDefinition screenEffectBrightenQuad
+   setDefinition ScreenEffectMaterial
+   addParam srcBlendMode destColor
+   addParam dstBlendMode one
+end
+
+materialDefinition screenEffectCameraViewQuad
+   setDefinition ScreenEffectMaterial
+   #addParam screenEffectTexture fxViewTarget
+   addParam srcBlendMode srcAlpha
+   addParam dstBlendMode invSrcAlpha
+end
+
+materialDefinition screenEffectSkyboxQuad
+   setDefinition ScreenEffectSkyboxMaterial
+
+   addParam srcBlendMode srcAlpha
+   addParam dstBlendMode invSrcAlpha
+end

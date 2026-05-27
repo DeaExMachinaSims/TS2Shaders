@@ -1,0 +1,19 @@
+#
+# Materials for stereo FX
+#
+
+materialDefinition soundWaves
+   setDefinition StandardMaterial
+   addParam stdMatLayer 19
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaBlendMode additive
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatAlphaMultiplier 0.05 
+   addParam stdMatBaseTextureAlphaReplicate false
+   addParam stdMatDiffCoef (0, 1, 1)
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName musicsoundring
+   addParam stdMatEmissiveCoef (0,0,0)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp
+end

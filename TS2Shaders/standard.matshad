@@ -1,0 +1,1060 @@
+#
+#  A collection	of standard	parameterized materials
+#
+#  Materials:  Null
+#			   VertexAlpha
+#			   StandardMaterial
+#
+#enableShaderProgramDebugging -vertex
+
+
+
+include	standardDefinitions.matShad
+include	standardDebug.matShad
+include	preprocessVertexPrograms.matShad
+include	deprecated.matShad
+
+
+
+# for FX series	cards, as well as Software
+include	ps2AssemblyPixelProcessing.matShad
+
+include	fixedFunctionPixelProcessing.matShad
+
+# the software VS cases	of standard	material
+include	SoftwareVSPath.matshad
+
+# the only pure	HW path	for	now.
+include	DX9HardwarePath.matshad
+
+include	DX8HardwarePath.matshad
+
+
+# --- Standard materials -------------------------------------------------------
+# All standard materials for use by	artists	should have	comments 
+# surrounding them with	#beginshader/#endshader	lines, and should
+# declare any extra	parameters (i.e., game-only	parameters not 
+# derived from the Maya	shader properties).	 This enables the
+# Maya shader specification	tool to	parse the results.
+
+#beginshader Null
+#description Shader	guaranteed not to draw
+   define Null()
+	  material
+		 shader
+		 end
+	  end
+   enddef
+#endshader
+
+
+
+include	vertexAlpha.matShad
+
+seti weatherLightCount 0
+
+#beginshader StandardMaterial
+
+# --- Default values for shader	parameters -------------------------------------
+
+# Comment below	marks this as the start	of attributes which	are	set	by artists
+# in Maya for the standard material
+#BeginStdAttrBlock
+
+set	  shaderNotifyString   ""
+set	  shaderNotifyString   ""
+#attrdescription Notification string sent out whenever material	is rendered
+
+seti  stdMatLayer 0	# min:-32 max:32
+seti  stdMatAddLayer 0
+#attrdescription Layer for drawing.	Higher numbers are drawn later.	0 is the default.
+
+sete  stdMatFillMode solid (solid wireframe)
+#attrdescription Type of primitive rendering
+
+sete  stdMatCullMode cullClockwise (none cullClockwise cullCounterClockwise)
+#attrdescription Culling (usually back-face) of	primitive rendering
+
+setb  stdMatLightingEnabled	true
+#attrdescription Whether to	light surfaces with	this material applied to them
+
+sete  stdMatMinLightRangeHint 4	(1 2 4)
+#attrdescription The minimum required light	intensity range	this material must support
+
+sete  stdMatAlphaBlendMode	 none	(none blend	additive addNoSrcAlphaScale)
+#attrdescription Use none for opaque surfaces or mask surfaces;	additive scales	colors against alpha and adds to destination; addNoSrcAlphaScale adds color	and	alpha to dest.
+
+setb  stdMatAlphaTestEnabled false
+#attrdescription Turn this on for mask surfaces
+
+seti  stdMatAlphaRefValue 127 #	min:0 max:255
+#attrdescription For mask surfaces,	threshold value	for	alpha
+
+setf  stdMatAlphaMultiplier	 1 # min:-5	max:5
+#attrdescription Straight multiplier on	alpha channel
+
+setb  stdMatBaseTextureAlphaReplicate false
+#attrdescription Whether to	expect a grayscale "-alpha"	texture	and	use
+#attrdescription that one value	for	all	three color	channels.
+
+set	  stdMatBaseTextureParam	   ""
+#attrdescription Extra parameters for the base texture,	enabling e.g. procedurally
+#attrdescription generated textures	to be specified
+
+set	  stdMatSpecMaskTextureParam   ""
+#attrdescription Extra parameters for the spec mask	texture, enabling e.g. procedurally
+#attrdescription generated textures	to be specified
+
+set	  stdMatNormalMapTextureParam  ""
+#attrdescription Extra parameters for the normal map (bump map)	texture, enabling e.g.
+#attrdescription procedurally generated	textures to	be specified
+
+set	  stdMatCutoutTextureParam		 ""
+#attrdescription Extra parameters for the cutout texture, enabling e.g.	procedurally
+#attrdescription generated textures	to be specified
+
+set	  stdMatEnvCubeTextureParam	   ""
+#attrdescription Extra parameters for the env cube texture,	enabling e.g. procedurally
+#attrdescription generated textures	to be specified
+
+sete  stdMatEnvCubeMode		  none	(none reflection)
+#attrdescription What kind of env cube is expected
+
+setf  stdMatEnvCubeBlurFactor 0	# min:0	max:64
+#attrdescription Blurriness	of environment cube	reflections/radiance
+
+setb  stdMatEnvCubeLockedToCamera false
+#attrdescription If	true, the environment cube is locked to	the	camera.
+
+sete  stdMatTextureCoordAnimMode none (none	transform tile video)
+#attrdescription Type of texture coordinate	animation
+
+setv2 stdMatTextureCoordTfAnimOrigin (0.5, 0.5)
+#attrdescription Origin	of rotation	and	scale for when 'transform' texture
+#attrdescription coordinate	animation is enabled
+
+setf  stdMatTextureCoordTfAnimRotSpeed	  0	# min:0	max:60
+#attrdescription Revolutions per second	for	when 'transform' texture coordinate
+#attrdescription animation is enabled, or zero to disable rotation animation
+
+setv2 stdMatTextureCoordTfAnimRotStartEnd (0, 1)
+#attrdescription Rotation start/end	position (1=360deg)	for	when 'transform'
+#attrdescription texture coordinate	animation is enabled
+
+sete  stdMatTextureCoordTfAnimRotWaveform triangular (sawtooth triangular sine)
+#attrdescription Rotation waveform type	for	when 'transform' texture coordinate
+#attrdescription animation is enabled
+
+setf  stdMatTextureCoordTfAnimScaleSpeed	0 #	min:0 max:60
+#attrdescription Scale cycles per second for when 'transform' texture coordinate
+#attrdescription animation is enabled, or zero to disable scale	animation
+
+setv2 stdMatTextureCoordTfAnimScaleStartEnd	(1,	2) # min:0.001 max:100
+#attrdescription Scale start/end values	for	when 'transform' texture coordinate
+#attrdescription animation is enabled
+
+sete  stdMatTextureCoordTfAnimScaleWaveform	triangular (sawtooth triangular	sine)
+#attrdescription Scale waveform	type for when 'transform' texture coordinate
+#attrdescription animation is enabled
+
+setf  stdMatTextureCoordTfAnimTransSpeed	0 #	min:0 max:60
+#attrdescription Translation cycles	per	second for when	'transform'	texture	coordinate
+#attrdescription animation is enabled, or zero to disable translation animation
+
+setv2 stdMatTextureCoordTfAnimTransStart (0, 0)
+#attrdescription Translation start UV coords for when 'transform' texture coordinate
+#attrdescription animation is enabled
+
+setv2 stdMatTextureCoordTfAnimTransEnd (0, 0)
+#attrdescription Translation end UV	coords for when	'transform'	texture	coordinate
+#attrdescription animation is enabled
+
+sete  stdMatTextureCoordTfAnimTransWaveform	triangular (sawtooth triangular	sine)
+#attrdescription Translation waveform type for when	'transform'	texture	coordinate
+#attrdescription animation is enabled
+
+setf  stdMatTextureCoordTileAnimSpeed	 0 # min:0 max:60
+#attrdescription The number	of tiles per second	for	when 'tile'	texture	coordinate
+#attrdescription animation is enabled
+
+setv2 stdMatTextureCoordAnimNumTiles (1,1)
+#attrdescription Defines number	of tiles in	the	source texture for when	'tile'
+#attrdescription texture coordinate	animation is enabled
+
+setb forceHighQualitySkinning false
+#attrdescription When enabled, the object will ignore the skinning quality settings.
+#attrdescription Only to be	used on	troublesome	objects	that require more-than-one bone.
+
+setb forceIgnoreShapeBlend false
+# this boolean is set if we dont want to use alpha blending of shape color settings
+
+# Comment below	marks this as the end of attributes	which are set by artists
+# in Maya for the standard material
+#EndStdAttrBlock
+
+setv3 stdMatDiffCoef	 (1,1,1)
+setv3 stdMatSpecCoef	 (0,0,0)
+setv3 stdMatEmissiveCoef (0,0,0)
+setv3 stdMatEnvCubeCoef	 (0,0,0)
+setf  stdMatSpecPower	 0
+
+setf stdMatUntexturedDiffAlpha 1
+
+setb  stdMatBaseTextureEnabled		false
+setb  stdMatSpecMaskTextureEnabled	false
+setb  stdMatNormalMapTextureEnabled	false
+setb  stdMatReduceBoneWeights		false	 # only	applies	the	first (most	important) weight.
+setb  stdMatMorphState				true	 # whether morph targets are applied.
+
+set	  stdMatBaseTextureName		  reggrid
+set	  stdMatSpecMaskTextureName	  reggrid
+set	  stdMatNormalMapTextureName  reggrid-bump
+set	  stdMatCutoutTextureName	  "0"		  #	default	is not to do cutouts
+set	  stdMatEnvCubeTextureName	  reflectionCubeTemplate-envcube
+
+sete  stdMatBaseTextureAddressingU tile	(tile mirror clamp borderColor)
+sete  stdMatBaseTextureAddressingV tile	(tile mirror clamp borderColor)
+sete  stdMatBaseTextureAddressingW tile	(tile mirror clamp borderColor)
+
+sete  stdMatSpecMaskTextureAddressingU tile	(tile mirror clamp borderColor)
+sete  stdMatSpecMaskTextureAddressingV tile	(tile mirror clamp borderColor)
+sete  stdMatSpecMaskTextureAddressingW tile	(tile mirror clamp borderColor)
+
+sete  stdMatNormalMapTextureAddressingU	tile (tile mirror clamp	borderColor)
+sete  stdMatNormalMapTextureAddressingV	tile (tile mirror clamp	borderColor)
+sete  stdMatNormalMapTextureAddressingW	tile (tile mirror clamp	borderColor)
+
+sete  stdMatCutoutTextureAddressingU clamp (tile mirror	clamp borderColor)
+sete  stdMatCutoutTextureAddressingV clamp (tile mirror	clamp borderColor)
+sete  stdMatCutoutTextureAddressingW clamp (tile mirror	clamp borderColor)
+
+seti stdDepthOffset 0
+
+# the only bumpMapping flag	now, default on	for	clockwork, contentviewer, casie, etc. Config manager will set off.
+# defaulting VS2 light looping OFF,	since radeons as of	(6/6/2004) are broken in some cases
+setb bumpMapping			  true
+setb flagSkinnedObjects		  false
+#setb mirrorReflectionsEnabled false
+setb vs2LoopsFunctional		  false	 
+setb causticsEnabled		  false
+setb	appInDebugMode false
+
+seti stdMatShapeColorIndex -1
+#setc stdMatShadowColor	(0.33, 0.33, 0.39)
+setc stdMatShadowColor (0.63, 0.63,	0.85)
+# Default shadow colour. Generally this	will be	overridden by code.
+
+ 
+
+
+# --- Shaders for standard material	--------------------------------------------
+
+define StandardMaterial()
+	material
+		if ($flagSkinnedObjects)
+			if (isEnabled(skinning)	and	hasVertexFormat(blendindices, 0))
+				setv3 stdMatDiffCoef (3.0,3.0,3.0)
+			endif
+		endif
+		
+		create StandardShaders()		
+	end		 
+enddef
+
+#endshader StandardMaterial	
+
+define StandardShaders()
+   preCreate -viewerRenderType $kRenderTypeNormal -viewerRenderType	($mirrorReflectionsEnabled ? $kRenderTypeMirror	: $kRenderTypeNormal) -deformations
+
+   if (numLightsOfType(${kShapeColorLight})	!= 0)
+	  create ShapeColorStandardMaterialOverrides()
+   endif      
+   
+   setb	modifiyEachFrameHintFlag false
+   
+   # debugging/visualization options
+   if ($stdMatLightingDebug)
+	  create LightingDebugStandardMaterialOverrides()
+   endif
+   
+   if ($stdMatBaseTextureEnabled and $stdMatDisplayTextureMapping)
+	  create StandardDisplayTextureMappingShader()
+   endif   
+   # end of	options
+   
+   # test for forcing of high-quality skinning.
+   if ($forceHighQualitySkinning)
+		setb stdMatReduceBoneWeights false	
+	endif
+   
+   create DetermineHardwareSupport()
+   
+   if (strcmp("${stdMatTextureCoordAnimMode}", "video")	= 0)
+	  setb modifiyEachFrameHintFlag	true
+   endif
+
+   if ($stdDepthOffset > 0)      
+      setb useHWShader2Path false
+   endif  
+   
+   if ($useHWShader2Path)           
+	  create DX9HardwarePath()
+   elseif ($useSWVertexShaderPath)           
+	  create SoftwareVSPath()
+   else            
+	
+	# DX7 and DX8 parts	go through this...		 
+
+
+	  #trace " FF TnL Path:	$currentMaterialName"
+	  
+	  if (viewerRenderType = $kRenderTypeShadow)
+		 create	StandardShaderShadow()	# we handle	this explicitly	with an	'if' to	avoid parsing StandardShaderShadow() when not in shadow	mode.
+	  else
+		 if	(strcmp("${stdMatEnvCubeMode}",	"none")	!= 0)
+			create StandardShaderLighting(true)
+			# the instantiations below create the fallback shaders for the env cube	map	shader
+		 endif
+		 
+		 #bump mapping REMOVED for 'low	end	< DX8' paths
+		 
+		 # if additive,	don't do lighting.
+		 if	(strcmp("${stdMatAlphaBlendMode}", "additive") = 0)
+			# additive and lighting	currently don't	mix	well, force	exclusivity.
+			setb stdMatLightingEnabled false
+			# also turn	off	cubemaps, so I don't trigger a assert.
+			set	stdMatCubeEnvMode none
+		 endif
+		 
+		 
+		 if	$stdMatLightingEnabled 
+			create StandardShaderLighting(false)
+		 else
+			create StandardShaderUnlit()
+		 endif
+	  endif
+	  
+   endif
+
+enddef
+ 
+
+define StandardShaderLighting(cubeMapEnabled)
+	if $stdMatSpecMaskTextureEnabled
+		assert ($stdMatSpecPower !=	0)						 "Spec mask	texture	enabled	but	spec power is zero"
+		assert (strcmp("${stdMatAlphaBlendMode}",	"none")	= 0) "Cannot use alpha blending	when spec mask texture enabled"
+		assert (not	$stdMatAlphaTestEnabled)					 "Cannot use alpha test	when spec mask texture enabled"
+	endif
+
+	setb	alphaBlendingOn	false
+
+	setb reflectionMapFlag &cubeMapEnabled
+	   
+	create StandardMaterialLit()
+	   
+	# fallbacks
+	if ($appInDebugMode	= false)
+
+	   
+		if (strcmp("${stdMatAlphaBlendMode}",	"none")	!= 0)
+			setb alphaBlendingOn true
+		endif
+			 
+		if ($alphaBlendingOn)
+			shader
+			end
+		endif	   
+			 
+		if ($alphaBlendingOn = false)
+
+			shader	-layer ($stdMatLayer + $stdMatAddLayer)
+				pass -fixedFunction
+				
+					colorScalar	(0.8,0.8,0.8) 1
+					create SetupSkinningStateAndPredicates()
+					create SetupMorphingStateAndPredicates()
+					
+					if ($doSkinning	or $doMorphing)
+						create PreprocessVertexShader()
+					endif
+					
+					if ($doSkinning)
+						ffIdentityModelTransform
+					endif	
+					
+					ffMatCoef -amb $stdMatDiffCoef -ambAlpha $stdMatAlphaMultiplier	-diff $stdMatDiffCoef -diffAlpha $stdMatAlphaMultiplier	-emit $stdMatEmissiveCoef -emitAlpha $stdMatAlphaMultiplier	-spec (0,0,0) -specPow 0
+
+					stage
+						textureBlend select	(diffuse)	select (diffuse)
+					end
+					
+				end
+				
+			end
+		endif
+	endif
+   
+   
+enddef
+
+
+define StandardMaterialLit()
+
+   setb	cutoutPass false
+   
+	setb updateEachFrameFlag false
+	if (strcmp("${stdMatTextureCoordAnimMode}",	"none")	!= 0)
+		setb updateEachFrameFlag true
+	endif
+			
+	if (strcmp("${stdMatAlphaBlendMode}", "none") )
+		setb alphaBlendingOn true
+	endif		
+		
+	#disable reflection maps if shapecolor is on, which  means it's fading, bright red, etc.
+
+	if ($stdMatShapeColorIndex = 0)
+		setb reflectionMapFlag false
+	endif
+	
+	seti  layerNumber ($stdMatLayer	* 18 + $stdMatAddLayer + ($alphaBlendingOn ? 17 : 0))
+	
+	
+	shader -layer $layerNumber
+		validateRenderShaderContext	-vertexFormat position 0 required
+		validateRenderShaderContext	-vertexFormat normal 0 required
+		validateRenderShaderContext	-viewerRenderType viewerRenderType
+				 
+		if ($stdMatBaseTextureEnabled or $stdMatSpecMaskTextureEnabled)
+			validateRenderShaderContext	-vertexFormat texcoord 0 required
+		endif
+
+		create SetupSkinningStateAndPredicates()
+		create SetupMorphingStateAndPredicates()
+
+		create SupportedRenderShaderContextFFPredicates()
+	  
+		if (strcmp("${stdMatCutoutTextureName}", "0")	!= 0) #	setting	stdMatCutoutTextureName	to "0" means to	not	do the cutout pass
+			setb cutoutPass true
+			create	CutoutPass()
+		endif
+	  
+	  #if we have a shape color light we want to additional depth pass so if there is some sorting problem
+	  # we don't see any artifacts
+	  create ShapeColorLightPass()
+	  
+	  # attempt 2 stage solution with MAD (ie, dx8 hardware)
+	  create SingleStandardMaterialPass($reflectionMapFlag) 	  
+	  if	(not varExists(isContentViewer) and $psVersion >= 1 or $vsVersion >= 1)
+	   create SingleStandardSnowMaterialPass()
+	  endif
+   end
+   
+   
+   
+   
+   shader -layer $layerNumber
+		validateRenderShaderContext	-vertexFormat position 0 required
+		validateRenderShaderContext	-vertexFormat normal 0 required
+		validateRenderShaderContext	-viewerRenderType viewerRenderType
+				 
+		if ($stdMatBaseTextureEnabled or $stdMatSpecMaskTextureEnabled)
+			validateRenderShaderContext	-vertexFormat texcoord 0 required
+		endif
+
+		create SetupSkinningStateAndPredicates()
+		create SetupMorphingStateAndPredicates()
+
+		create SupportedRenderShaderContextFFPredicates()
+	  
+		if (strcmp("${stdMatCutoutTextureName}", "0")	!= 0) #	setting	stdMatCutoutTextureName	to "0" means to	not	do the cutout pass
+			setb cutoutPass true
+			create	CutoutPass()
+		endif
+	  
+		create BaseTexturePass()
+			
+		if ($cubeMapSupport and $reflectionMapFlag)
+			create CubemapPass()
+		endif
+	  
+   end
+   
+ 
+enddef
+
+
+
+
+
+define BaseTexturePass()
+
+	if ($updateEachFrameFlag)
+		pass -fixedFunction	-modifiedEachFrameHint
+	else
+		pass -fixedFunction
+	endif
+		
+			 
+
+		create CommonStandardMaterialSetup()
+
+		colorScalar (1,1,1,$stdMatUntexturedDiffAlpha) -applyShapeColor $stdMatShapeColorIndex
+
+		if	$stdMatBaseTextureEnabled
+			# base texture stage
+			stage
+				create StandardShaderTextureState(Base)
+
+				if $stdMatBaseTextureAlphaReplicate
+					textureBlend multiplyScale2(texture:alphaReplicate outRegister) multiply(texture	outRegister)
+				else
+					textureBlend multiplyScale2(texture outRegister)	multiply(texture outRegister)
+				endif
+			end
+		else
+			# diffuse color	(no	base texture) stage
+			stage
+				textureBlend	multiplyScale2(outRegister	colorScalar) multiply(outRegister colorScalar)
+			end
+		endif
+
+	end
+
+enddef
+
+
+
+
+
+define CubemapPass()
+
+	  #	moving the cubemap reflection stuff	to another pass, this is more compatible, and prevents the use of a	'white texture'.
+	  
+ 
+	pass -fixedFunction
+		
+		if ($doSkinning)
+			ffIdentityModelTransform
+		endif 
+
+		if ($stdMatBaseTextureEnabled =	false)
+			setf	finalAlphaScale	($stdMatUntexturedDiffAlpha	* $stdMatAlphaMultiplier)
+		else
+			setf	finalAlphaScale	($stdMatAlphaMultiplier)
+		endif
+		
+		if (strcmp("${stdMatAlphaBlendMode}", "none") != 0)
+			depthTest true -enableDepthWrite	false
+		endif
+		
+		colorScalar	($stdMatEnvCubeCoef) $finalAlphaScale -applyTextureLightColor 0	0
+		
+		fillmode $stdMatFillMode
+		cullmode $stdMatCullMode
+		
+		create LightingStatesParam(hasDeformations true)
+		ffMatCoef -amb (0,0,0) -ambAlpha 0 -diff (0,0,0) -diffAlpha	0 -emit	(0,0,0)	-emitAlpha 0 -spec (0,0,0) -specPow	0
+
+		# an additive pass
+		alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+		
+		create PostCutoutPassDepthTest() # This	overrides the depth	test setting from StandardShaderFBAlphaState()
+
+		# cube environment map reflection stage
+	
+		stage
+			create	StandardShaderEnvCubeMapState(fromReflectionVector)	  
+			textureBlend multiply(texture colorScalar)	multiply(texture colorScalar)
+		end
+
+		if ($stdMatBaseTextureEnabled)  # have to apply the base texture alpha to the cubemap pass too.
+			stage 
+				create StandardShaderTextureState(Base)
+				ffTextureCoordsSource	0	# 2nd stage, but I need	texcoords from the first stage.
+				textureBlend select(outRegister) multiply(texture	outRegister)
+			end
+		endif
+		
+	end
+		
+	
+	  
+enddef  # Cubemap pass
+
+define ShapeColorLightPass()
+   # book is a special case on which we want to avoid depth pass
+	if (numLightsOfType(${kShapeColorLight}) != 0  and  $stdMatAlphaTestEnabled = false and strcmp("${stdMatAlphaBlendMode}", "blend") = 0 and strstr("$currentMaterialName", "book") = 0 and strstr("$currentMaterialName", "teddybear") = 0 and strstr("$currentMaterialName", "bed") = 0)
+		pass -fixedFunction
+			create NonStandardLighting()
+			depthTest true -enableDepthWrite true			
+			alphaBlend srcFactor(zero) add dstFactor(one)			
+
+         colorScalar (0, 0, 0, 0)
+         
+         stage 
+            textureBlend select(colorScalar) select(colorScalar)
+         end
+		end
+	endif
+enddef
+
+define  SingleStandardMaterialPass(reflectionMapFlag)
+
+   	
+	#base * diffuse * 2 + Cubemap * CubemapScale
+	#or
+	#(Diffuse + diffuse) + cubemap * cubemapScale
+	
+	  
+	if ($updateEachFrameFlag)
+		pass -fixedFunction	-modifiedEachFrameHint
+	else
+		pass -fixedFunction
+	endif
+		
+		# this is because cutout did a preprocess already.
+
+		create CommonStandardMaterialSetup()
+		
+		if ($stdDepthOffset > 0)
+		   ffDepthOffset $stdDepthOffset
+		endif
+		
+		if ($stdMatBaseTextureEnabled =	false)
+		   setf	finalAlphaScale	($stdMatUntexturedDiffAlpha	* $stdMatAlphaMultiplier)
+		else
+		   setf	finalAlphaScale	($stdMatAlphaMultiplier)
+		endif
+				
+		colorScalar	($stdMatEnvCubeCoef) $finalAlphaScale -applyTextureLightColor 0	0 -applyShapeColor $stdMatShapeColorIndex
+  
+		if ($stdMatBaseTextureEnabled)
+			stage
+			    create StandardShaderTextureState(Base)
+				textureBlend multiplyScale2(texture diffuse) multiply(texture colorScalar)
+			end
+		else
+		   #emulates Scale2X
+			stage
+				textureBlend add(diffuse diffuse) select(colorScalar)
+			end
+		endif
+	
+		if (&reflectionMapFlag)
+			stage
+				create	StandardShaderEnvCubeMapState(fromReflectionVector)	  
+				textureBlend multiplyAdd(texture colorScalar outRegister)	select(outRegister)
+     		end
+		endif
+		
+	end #pass
+
+enddef
+
+
+define  SingleStandardSnowMaterialPass()  
+   seti weatherLightCount (numLightsOfType(${kWeatherLight}))
+   setb shouldShowSnowOnObject true
+   
+   if (strstr("$currentMaterialName", "shadow") != 0 or strcmp("${stdMatAlphaBlendMode}", "none") != 0 or strstr("$currentMaterialName", "lit") != 0)
+      setb shouldShowSnowOnObject false
+   endif
+
+   
+	if ($weatherLightCount > 0 and $shouldShowSnowOnObject)
+
+		pass -fixedFunction	
+		   create CommonStandardMaterialSetup()
+   		alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)			
+   		depthTest true -enableDepthWrite false
+		   depthTestFunction acceptIfEqual
+		   #colorScalar	($stdMatEnvCubeCoef) $finalAlphaScale -applyTextureLightColor 0	0
+		  # if (tsIsDay)
+		      colorScalar (0.68, 0.68, 0.72, 0.5) -applyShapeColor $stdMatShapeColorIndex 		   
+		  # else
+		  #    colorScalar (0.57, 0.57, 0.62, 0.5) -applyShapeColor $stdMatShapeColorIndex 		   
+		  # endif
+
+         stage
+		      texture "snow-object-noise"
+		      textureMIPFilterHint disabled		   
+            textureAddressing tile tile
+            ffTextureCoordsSource fromPosition
+            ffTextureMatrix -cameraToGlobal -scalev (8, 8)
+            textureTransformType vector2
+            textureBlend multiply(texture colorScalar) multiply(texture colorScalar) # make the difference to be 0.5
+		   end
+
+		   stage
+			   texture cubeNormalMap-envcube 
+			   textureAddressing clamp clamp clamp
+			   textureFilterHint bilinear bilinear	
+			   textureMIPFilterHint disabled		   
+   			
+			   ffTextureCoordsSource fromNormal         
+			   ffTextureMatrix -orientCameraToGlobal
+			   textureTransformType vector3
+			   textureBlend subtract(texture:alphaReplicate outRegister) subtract(texture outRegister)
+		   end   		
+		   
+         stage
+            textureBlend multiplyScale4(diffuse colorScalar) multiplyScale4(outRegister colorScalar)
+         end
+		
+	   end #pass
+	endif
+enddef
+
+
+define CommonStandardMaterialSetup()
+
+	# this is because cutout did a preprocess already.
+	if ($doSkinning	or $doMorphing)
+		if ($cutoutPass	= false)
+			create PreprocessVertexShader()
+		endif
+	endif
+
+	if ($doSkinning)
+		ffIdentityModelTransform
+	endif	
+	
+	setv3 half (0.5,0.5,0.5)
+	
+	# disable automatic	normalization of normals for better	performance	when not rendering geometry	with deformations
+	# force	local viewer if	reflection vector is calculated
+	create LightingStatesParam(hasDeformations true)
+	
+	# only enable specular highlights when the material	specular power is >0 and the specular mask texture is disabled
+
+	if ($stdMatSpecPower !=	0)
+		ffMatCoef -applyShapeColor $stdMatShapeColorIndex -amb ($stdMatDiffCoef * $half) -ambAlpha	$stdMatAlphaMultiplier -diff ($stdMatDiffCoef * $half)	-diffAlpha $stdMatAlphaMultiplier -emit	($stdMatEmissiveCoef * $half) -emitAlpha $stdMatAlphaMultiplier -spec $stdMatSpecCoef -specPow	$stdMatSpecPower
+		addSpecular	true
+	else
+		ffMatCoef -applyShapeColor $stdMatShapeColorIndex -amb ($stdMatDiffCoef * $half) -ambAlpha	$stdMatAlphaMultiplier -diff ($stdMatDiffCoef * $half)	-diffAlpha $stdMatAlphaMultiplier -emit	($stdMatEmissiveCoef * $half) -emitAlpha $stdMatAlphaMultiplier -spec (0,0,0) -specPow	0
+	endif
+
+	create StandardShaderFBAlphaState($stdMatAlphaBlendMode)
+	create PostCutoutPassDepthTest() # This	overrides the depth	test setting from StandardShaderFBAlphaState()
+
+	fillmode $stdMatFillMode
+	cullmode $stdMatCullMode		
+		
+enddef
+
+
+
+
+define StandardShaderUnlit()
+	assert (not	$stdMatSpecMaskTextureEnabled)			"Spec mask texture not supported for unlit materials"
+	assert (not	$stdMatNormalMapTextureEnabled)			"Normal	map	texture	not	supported for unlit	materials"
+	assert (strcmp("${stdMatEnvCubeMode}", "none") = 0)	"Env cube map not supported	for	unlit materials"
+
+	setb alphaBlendingOn false
+	
+	
+	if (strcmp("${stdMatAlphaBlendMode}", "none") )
+		setb alphaBlendingOn true
+	endif		  
+	
+	if (numLightsOfType(${kShapeColorLight}) > 0)
+		setb alphaBlendingOn true
+	endif
+
+	seti  layerNumber ($stdMatLayer	* 18  + $stdMatAddLayer	+ ($alphaBlendingOn	? 17	: 0))
+
+	shader -layer $layerNumber
+   
+		validateRenderShaderContext	-vertexFormat position 0 required
+		validateRenderShaderContext	-viewerRenderType viewerRenderType
+
+		if ($stdMatBaseTextureEnabled or $stdMatSpecMaskTextureEnabled)
+			validateRenderShaderContext	-vertexFormat texcoord 0 required
+		endif	    
+		
+		if (numLightsOfType(${kShapeColorLight}) != 0)
+		   seti stdMatShapeColorIndex 0
+			set stdMatAlphaBlendMode blend
+	   endif
+	  
+		create SetupSkinningStateAndPredicates()
+		create SetupMorphingStateAndPredicates()
+
+		if (strcmp("${stdMatCutoutTextureName}", "0") != 0)	# setting stdMatCutoutTextureName to "0" means to not do the cutout	pass
+			create CutoutPass()
+		endif
+		  
+	  #	if any animated	mode is	on,	then update	each frame.
+		setb updateEachFrameFlag false
+		if (strcmp("${stdMatTextureCoordAnimMode}",	"none")	!= 0)
+			setb updateEachFrameFlag true
+		endif
+		  
+		if ($updateEachFrameFlag)
+			pass -fixedFunction	-modifiedEachFrameHint
+		else
+			pass -fixedFunction
+		endif
+	  
+		if ($doSkinning	or $doMorphing)
+			create PreprocessVertexShader()
+		endif
+			
+		if ($doSkinning)
+			ffIdentityModelTransform
+		endif
+	   
+		 # no lighting so no need to do	automatic normalization	of normals even	when rendering geometry	with deformations
+		 create	LightingStatesNoStdLights()
+		 
+		if ($stdMatBaseTextureEnabled =	false)
+		   setf	finalAlphaScale	($stdMatUntexturedDiffAlpha	* $stdMatAlphaMultiplier)
+		else
+		   setf	finalAlphaScale	($stdMatAlphaMultiplier)
+		endif
+		
+		# don't wanna apply ambience lighting on objects emissive settings on them		
+      setb hasEmissive (($stdMatEmissiveCoef).x > 0 or ($stdMatEmissiveCoef).y > 0 or ($stdMatEmissiveCoef).z > 0 or tsIsLightMaterial("${currentMaterialName}")) 
+	
+	   if (strcmp("${stdMatTextureCoordAnimMode}",	"none")	!= 0 or $hasEmissive)	      
+			colorScalar ($stdMatDiffCoef + $stdMatEmissiveCoef) $finalAlphaScale	-applyShapeColor $stdMatShapeColorIndex
+		else		   		   
+		   colorScalar ($stdMatDiffCoef) $finalAlphaScale	-applyShapeColor $stdMatShapeColorIndex -applyTextureLightColor 0 0
+		endif
+					 
+
+		 create	StandardShaderFBAlphaState($stdMatAlphaBlendMode)
+		 create	PostCutoutPassDepthTest() #	This overrides the depth test setting from StandardShaderFBAlphaState()
+		 
+		 fillmode $stdMatFillMode
+		 cullmode $stdMatCullMode
+		 
+		 
+		 if	($stdMatBaseTextureEnabled)
+			# base texture stage
+			stage
+			   create StandardShaderTextureState(Base)
+
+			   if $stdMatBaseTextureAlphaReplicate
+				  textureBlend multiply(texture:alphaReplicate colorScalar)	multiply(texture colorScalar)
+			   else
+				  textureBlend multiply(texture	colorScalar) multiply(texture colorScalar)
+			   endif
+			end
+		 else
+			# diffuse color	(no	base texture) stage
+			stage
+			   textureBlend	select(colorScalar)	select(colorScalar)
+			end
+		 endif
+	  end
+   end
+   
+   
+   if ($appInDebugMode = false)
+
+	  #	fallback, do nothing.
+	  shader
+	  
+	  end
+
+   endif
+   
+   
+enddef
+
+
+
+# --- Shadow shader	for	a shadow viewer	----------------------------------------
+
+define StandardShaderShadow()
+	shader -layer ($stdMatLayer	* 18 + $stdMatAddLayer)
+		validateRenderShaderContext	-vertexFormat position 0 required
+		validateRenderShaderContext	-viewerRenderType $kRenderTypeShadow
+
+		# we don't care	about good skinning. TODO: eliminate normal	skinning.
+		set	stdMatReduceBoneWeights	true
+		# we don't care	about morphs at	all.
+		set	stdMatMorphState false
+		
+		create SetupSkinningStateAndPredicates()
+		create SetupMorphingStateAndPredicates()
+
+		pass -fixedFunction
+			
+			if ($doSkinning	or $doMorphing)
+				create PreprocessVertexShader()
+			endif
+		
+			if ($doSkinning)
+				ffIdentityModelTransform
+			endif
+
+			# no lighting so no	need to	do automatic normalization of normals even when	rendering geometry with	deformations
+			create LightingStatesNoStdLights()
+			
+			#alphaBlend	srcFactor(one) add dstFactor(zero)
+			
+			colorScalar	$stdMatShadowColor 1
+			 
+			fillmode $stdMatFillMode
+			cullmode $stdMatCullMode
+		 
+		 stage
+			textureBlend select(colorScalar) select(colorScalar)			   
+		 end
+		 
+	  end
+   end
+enddef
+
+
+
+
+
+##########
+setf blurFactor	0
+setf reflectivity 1
+
+
+define PhongTextureEnvironmentCubeLight()
+   material
+	  create PhongTextureEnvironmentCubeLightShaders()
+   end
+enddef
+
+
+# --- PhongTextureEnvironmentCubeLightShaders -------------------------------------------------------------------------
+
+define PhongTextureEnvironmentCubeLightShaders()
+   # higher	priorities than	any	of the fallback	regular	texture	shaders	below
+   create PhongTextureEnvironmentCubeLightShaderLtRng4(BonesTargetsPNT)
+   create PhongTextureEnvironmentCubeLightShaderLtRng4(TargetsPNT)
+   create PhongTextureEnvironmentCubeLightShaderLtRng4(BonesPNT)
+   create PhongTextureEnvironmentCubeLightShaderLtRng4(none)
+
+   create PhongTextureShaders()
+enddef
+
+define PhongTextureEnvironmentCubeLightShaderLtRng4(vertproc)
+   shader -layer ($stdMatLayer * 18 + $stdMatAddLayer)
+	  vertexFormatPred position	0 true
+	  vertexFormatPred normal	0 true
+	  vertexFormatPred texcoord	0 true
+	  viewerRenderTypePred viewerRenderType
+
+	  pass -fixedFunction
+#REPAIR_ME:
+#		  vertexProcessor &vertproc
+		 lightTypePredicate	0 environmentCube
+#REPAIR_ME:
+#		  ffLighting -enable true -skipFirstLight environmentCube -textureStage	0 0
+
+		 create	AttenuatedMatCoef(0.25)
+
+		 colorScalar (0, 0,	0, $reflectivity * 0.25)
+		 fillmode $stdMatFillMode
+		 cullmode $stdMatCullMode
+
+		 stage
+			# do not set texture state -- this will	be done	by env cube	light
+			textureMIPFilterHint linear	$blurFactor
+
+			ffTextureCoordsSource fromNormal
+			textureTransformType vector3
+			ffTextureMatrix	-orientCameraToGlobal
+
+			textureAddressing clamp	clamp clamp
+
+			# add environment map radiance (scaled by colorScalar alpha) to	the	per	vertex diffuse lighting	radiance
+			textureBlend multiplyAdd(texture colorScalar:alphaReplicate	diffuse) select(diffuse)
+		 end
+
+		 stage
+			texture	$stdMatBaseTextureName
+			ffTextureCoordsSource 0
+			textureBlend multiplyScale4(texture	outRegister) select(outRegister)
+		 end
+	  end
+
+	  pass -fixedFunction
+#REPAIR_ME:
+#		  vertexProcessor &vertproc
+		 create	LightingStates()
+		 lightTypePredicate	0 environmentCube -invert
+
+		 create	AttenuatedMatCoef(0.25)
+		 fillmode $stdMatFillMode
+		 cullmode $stdMatCullMode
+
+		 stage
+			texture	$stdMatBaseTextureName
+			textureBlend multiplyScale4(texture	diffuse) multiply(texture diffuse)
+		 end
+	  end
+   end
+enddef
+
+
+
+#
+#  Sims	2 specific additions to	the	standard material.
+#
+
+define ShapeColorStandardMaterialOverrides()
+   seti	stdMatShapeColorIndex 0
+   setb bShouldBlend (shapeHasBlend)
+   
+   if ((not $forceIgnoreShapeBlend) and $bShouldBlend)            
+      set stdMatAlphaBlendMode blend
+      set stdMatAlphaRefValue 40 #set the upper limit on alpha ref value
+      setb alphaBlendingOn true
+   endif
+enddef
+
+# used to mask out part	of a model using a cutout mask texture
+define CutoutPass()
+	pass -fixedFunction
+		create LightingStatesNoStdLights()
+		if ($doSkinning	or $doMorphing)
+			create PreprocessVertexShader()	# for skinning
+		endif
+		
+
+		if ($doSkinning)
+			ffIdentityModelTransform
+		endif				 
+
+	  #	we write only to the depth buffer, and only	where the mask is white
+		alphaBlend srcFactor(zero) add dstFactor(one)
+		alphaTest true 127
+		alphaTestFunction acceptIfGreater
+
+		fillmode $stdMatFillMode
+
+		depthTest true -enableDepthWrite true		
+
+		stage
+			texture	$stdMatCutoutTextureName ${stdMatCutoutTextureParam}
+			textureAddressing $stdMatCutoutTextureAddressingU $stdMatCutoutTextureAddressingV
+			# really doesn't matter	what we	write out here,	since it will be overridden
+			# in later passes
+			textureBlend select(texture) select(texture)
+		end
+	end
+enddef
+
+
+# this should come after any default setting of	depthTest parameters, as an	override
+define PostCutoutPassDepthTest()
+   # setting stdMatCutoutTextureName to	"0"	means to not do	the	cutout pass
+   if (strcmp("${stdMatCutoutTextureName}",	"0") !=	0)
+	  #	We write only if equal,	because	we don't want to write in the masked
+	  #	out	portion	specified by the cutout	pass
+	  depthTest	true -enableDepthWrite false
+	  depthTestFunction	acceptIfEqual
+   endif
+enddef
+
+

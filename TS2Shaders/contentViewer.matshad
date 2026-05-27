@@ -1,0 +1,395 @@
+#
+# Various material definitions for the ContentViewer.
+#
+
+# note: don't check this in -- seems to cause a crash if
+# you don't have the debugger set up correctly
+#enableShaderProgramDebugging -vertex
+
+# anything extra needed by the contentviewer should be moved 
+# from config.matShad to common.matShad.
+#include "config.matshad"
+
+# Lab extension stuff
+  
+define ShowRenderTypeMaterial()
+   material
+      shader
+         viewerRenderTypePred viewerRenderType
+
+         pass -fixedFunction            
+            ffMatCoef -diff (1, 0, 0)
+            seti rt (viewerRenderType + 1)
+            setc rtColor ((floor($rt / 4) % 2), (floor($rt / 2) % 2), (floor($rt) % 2))
+            ffMatCoef -diff $rtColor
+            create LightingStates()
+            
+            stage
+               textureBlend select(diffuse) select(diffuse)
+            end
+         end
+      end
+   end
+enddef
+
+define TestGlow-AsmVertexProgram(numPass)
+   vertexFormatPred position 0 true
+
+   shaderProgram -target vertexProgram -method assemble
+      bindConstants 0 -bindingID geomToCamera -constantCount 3
+      bindConstants 3 -bindingID cameraToClip -constantCount 4
+
+      shaderSource
+         vs_1_1
+         dcl_position v0
+         dcl_normal   v1
+
+         def c7,$color,0
+         def c8,$offset,0
+         def c9,$glowOffset,0
+         def c10,$glowColor
+         def c11, &{numPass},&{numPass},&{numPass},0
+         
+         add r0, v0, c8     ; add the offset
+         
+         ; add the glow offset along the normal
+         mov  r1, c9
+         mov  r2, v1
+         mul  r0, c11, r1   ; numPass * glowOffset
+         mad  r0, r2, r0, v0 ; (numPass * glowOffset * normal) + pos
+         add  r0, r0, c8     ; (numPass * glowOffset * normal) + pos + offset
+         
+         m4x3 r1.xyz, r0, c0
+         mov  r1.w,   v0.w
+         m4x4 oPos,   r1, c3
+         mov  r2,     c7
+         add  oD0,    r2, c10
+      endShaderSource
+   end
+enddef
+
+define SimpleVS()
+   # vertex program
+   shaderProgram -target vertexProgram -method assemble
+      bindConstants 0 -bindingID geomToCamera -constantCount 3
+      bindConstants 3 -bindingID cameraToClip -constantCount 4
+      
+      shaderSource
+         vs_1_1
+         dcl_position v0
+         
+         def c7,$color
+         
+         m4x3 r1.xyz, v0, c0
+         mov  r1.w,   v0.w
+         
+         m4x4 oPos,   r1, c3         
+         mov  oD0,    c7
+      endShaderSource
+   end
+enddef
+
+define SimplePS()         
+   # pixel program
+   shaderProgram -target pixelProgram -method assemble
+      shaderSource
+         ps_1_1
+         mov r0, v0
+      endShaderSource
+   end
+enddef
+
+setb glowEnabled false
+define MaterialWithGlow()
+# test material for glow effect
+   seti maxRenderTargets (queryIntegerGraphicsDeviceCap(numSimultaneousRTs))
+   
+   material
+      shader
+         if ($maxRenderTargets > 1) # MRTs allowed, write out two color values in a single pass         
+            pass
+               renderTarget viewerRenderTarget -colorBuffers 2  # use two of the color buffers from the glow texture 
+               vertexFormatPred position 0 true
+               
+               # vertex program
+               shaderProgram -target vertexProgram -method assemble
+                  bindConstants 0 -bindingID geomToCamera -constantCount 3
+                  bindConstants 3 -bindingID cameraToClip -constantCount 4
+                  
+                  shaderSource
+                     vs_3_0
+                     dcl_position v0
+                     dcl_position0 o0
+                     dcl_color o1
+                     
+                     def c7,$color
+                     
+                     m4x3 r1.xyz, v0, c0
+                     mov  r1.w,   v0.w
+                     
+                     m4x4 o0,   r1, c3         
+                     mov  o1,   c7
+                  endShaderSource
+               end
+               
+               # pixel program
+               shaderProgram -target pixelProgram -method assemble
+                  shaderSource
+                     ps_3_0
+                     
+                     dcl_color v0
+                     mov oC0, v0
+                     mov oC1, v0
+                  endShaderSource
+               end
+            end
+         else   # only one render target allowed, use two passes
+            if ($glowEnabled)
+               pass # 1
+                  # render object to glow buffer
+                  renderTarget viewerRenderTarget
+                  
+                  vertexFormatPred position 0 true               
+                  create SimpleVS()
+                  create SimplePS()
+               end
+            endif         
+         
+            pass # 2
+               # render object to backbuffer
+               # Note: The backbuffer rendering pass should generally come after
+               # all passes that render to other textures.
+               # This is so that the render target is set to the backbuffer for 
+               # the next object to be rendered (which may not explicitly set it).
+               renderTarget viewerCompositingTarget
+               
+               vertexFormatPred position 0 true            
+               create SimpleVS()
+               create SimplePS()
+            end
+         endif
+      end
+   end
+enddef
+
+
+if (not varExists(mvMaterialDefinition))
+  set mvMaterialDefinition  StandardMaterial
+endif
+
+materialDefinition MVLab-CubeMat
+   setDefinition $mvMaterialDefinition
+   addParam stdMatDiffCoef (0, 0, 1)
+end
+
+materialDefinition "MVLab-SphereMat"
+   setDefinition $mvMaterialDefinition
+end
+
+materialDefinition "MVLab-ConeMat"
+   setDefinition $mvMaterialDefinition
+   addParam stdMatDiffCoef (1, 0.5, 0)
+end
+
+materialDefinition MVLab-CylinderMat
+   setDefinition $mvMaterialDefinition
+   addParam stdMatDiffCoef (1, 1, 0)
+end
+
+materialDefinition MVLab-MeshMat
+   setDefinition $mvMaterialDefinition
+   addParam stdMatDiffCoef (0, 0, 1)   
+end
+
+materialDefinition MVLab-CylinderTopMat
+   setDefinition $mvMaterialDefinition
+   addParam stdMatDiffCoef $blue
+end
+
+materialDefinition MVLab-CylinderBottomMat
+   setDefinition $mvMaterialDefinition
+   addParam stdMatDiffCoef $blue
+end
+
+materialDefinition MVLab-CylinderPanel0Mat
+   setDefinition $mvMaterialDefinition
+   addParam stdMatDiffCoef $green
+end
+
+materialDefinition MVLab-CylinderPanel1Mat
+   setDefinition $mvMaterialDefinition
+   addParam stdMatDiffCoef $yellow
+end
+
+materialDefinition MVLab-CylinderPanel2Mat
+   setDefinition $mvMaterialDefinition
+   addParam stdMatDiffCoef $purple
+end
+
+materialDefinition MVLab-CylinderPanel3Mat
+   setDefinition $mvMaterialDefinition
+   addParam stdMatDiffCoef $red
+end
+
+
+
+
+##############################################################
+# Render to texture stuff
+#
+set mvAspect 1
+set mvOffset ((1 - $mvAspect) / 2)
+
+define MVLab-RenderToTexture()
+   material
+      shader
+         vertexFormatPred position 0 true
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            colorScalar (0.8, 0.8, 1, 1)
+
+            stage
+               texture "MVLab-RenderTargetTexture"
+
+               textureFilterHint bilinear bilinear
+               textureMIPFilterHint disabled
+               textureAddressing clamp clamp clamp
+            
+               ffTextureMatrix -scalev (1, $mvAspect) -trans (0, $mvOffset)
+               textureTransformType vector2
+               
+               textureBlend multiply(texture colorScalar) select(texture)
+            end 
+         end
+      end
+   end
+enddef
+
+#
+# Doesn't perform any reflection itself -- merely texture maps
+# a screen-size texture onto geometry.
+#
+
+# TODO: we should set a script variable or predicate
+# if hardware vertex shaders are not available.
+
+define MVLab-RenderToTextureReflection()
+   material
+      shader
+         vertexFormatPred position 0 true
+
+         pass -fixedFunction
+            
+            colorScalar (0.8, 0.8, 1, 1)
+            
+            stage
+               ffTextureCoordsSource fromPosition
+               ffTextureMatrix -cameraToClip -scalev (-0.5, (0.5 * -$mvAspect)) -trans (0.5, 0.5)
+               textureTransformType vector4 homogeneous
+            
+               texture  "MVLab-RenderTargetTexture"
+               textureBlend multiply(texture colorScalar) select(texture)
+            end 
+         end
+      end
+   end
+enddef
+
+
+#
+# Used to clear the glow render target texture.
+# by varying 'feedback', you control how much of
+# the previous frame feeds through into the current.
+#
+setf feedback 0.5
+define MVLab-Dimmer()
+   material
+      shader -layer -31
+         vertexFormatPred position 0 true
+
+		
+         pass                        
+            shaderProgram -target vertexProgram -method assemble
+        
+				bindConstants 0 -bindingID immediateData -data (((1 - $mvAspect) / 2), $mvAspect, 1, 1)    
+				
+				shaderSource
+				
+					vs_1_1
+					dcl_position0 v0 
+					dcl_texcoord0 v1
+
+					mov r0.x, -v0.x
+					mov r0.y, v0.z
+					mov r0.zw, c0
+	                                    
+					mov oPos, r0
+	   
+					mov oT0.x, v1.x
+					mul r0.y, v1.y, c0.y
+					add oT0.y, r0.y, c0.x 
+			                
+				endShaderSource
+				
+            end 
+
+            colorScalar (0, 0, 0, (1 - $feedback))
+            cullmode none
+            depthTest false
+            
+            alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+            stage
+               textureBlend select(colorScalar) select(colorScalar)
+            end 
+         end
+      end
+   end
+enddef
+
+set visualizationTexture "UVVisualization"
+define MV-UVVisualization()
+   material
+      shader
+         pass -fixedFunction
+            stage
+               texture $visualizationTexture
+               textureBlend select(texture) select(texture)
+            end
+         end  # pass
+      end  # shader
+   end  # material
+enddef
+
+materialDefinition MVLab-RenderTargetMaterial
+   setDefinition MVLab-RenderToTexture
+end
+
+materialDefinition MVLab-RenderTargetReflectionMaterial
+   setDefinition MVLab-RenderToTextureReflection
+end
+
+materialDefinition MVLab-RenderTargetGlowMaterial
+   setDefinition MVLab-Dimmer
+   addParam feedback 0.8
+end
+
+materialDefinition MVLab-DimmerMaterial
+   setDefinition MVLab-Dimmer
+   addParam feedback 0.8
+end
+
+# Test of skybox compositing pass.
+materialDefinition MVLab-CompositingPass0Material
+   setDefinition SkyboxCompositionPassMaterial
+   addParam skyboxCubeTexture reflectionoutdoorwater-envcube
+end
+
+materialDefinition MVLab-LightingTest
+   setDefinition StandardMaterial
+   addParam stdMatDiffCoef (0.5, 0.5, 0.5)
+end
+
+materialDefinition MV-UVVisualizationMaterial
+   setDefinition MV-UVVisualization
+end

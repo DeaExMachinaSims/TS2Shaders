@@ -1,0 +1,12 @@
+materialDefinition clothesChangeSwirl
+   setDefinition StandardParticleModelMaterial
+   addParam stdMatLayer 15
+   addParam stdMatLightingEnabled false
+   addParam stdMatAlphaTestEnabled false
+   addParam stdMatBaseTextureAlphaReplicate true
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName clotheschange-swirls
+   addParam stdMatEmissiveCoef (1, 1, 1)
+   addParam stdMatBaseTextureAddressingU clamp
+   addParam stdMatBaseTextureAddressingV clamp  
+end    

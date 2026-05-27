@@ -1,0 +1,28 @@
+#
+# Material configuration file for The Sims 2
+#
+
+version 2
+
+ignoreErrors true
+
+flushMaterials
+
+#include "debugging_support.matShad"   # uncomment for debug configuration settings
+
+# Common definition files. Please put all materials
+# shared by the game and content viewer here.
+include "common.matShad"
+
+# Game-only materials
+include "neighborhood.matShad"
+include "neighborhoodRoads.matShad"
+include "floor.matShad"
+include "terrain.matShad"
+include "wall.matShad"
+include "shadow.matShad"
+include "roof.matShad"
+include "deckfoundation.matShad"
+include "lotSkirt.matshad"
+
+bindMaterials

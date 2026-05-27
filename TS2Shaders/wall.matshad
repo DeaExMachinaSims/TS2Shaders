@@ -1,0 +1,561 @@
+#
+# Shaders for Sims 2 walls
+#
+
+seti wallLayer 0
+seti wallMaskLayer -16
+setb tsMirrorWallMask false
+setb tsCausticsPass false
+seti tsRenderStyle 0
+set wallpaperTextureParam ""
+set wallMaskTextureParam ""
+setb wallHighlightOn false
+setc wallHighlightIntensity (0.25, 0.25, 0.25, 1.0)  # adjust brightness of wall highlight texture
+
+
+setb debugShowWallIncidence false
+setb debugShowWallLightmap false
+setb debugShowWallNormalMap false
+setb debugWallLighting false
+
+include PixelShaderWalls.matshad
+
+
+###########
+# WALL TOPS are rendered with WallpaperAndMask!  All wall top material defs are removed from this file since they were dead code.
+###########
+
+
+# common stuff to collapse into a single check.
+define SetupCommonWallFlags()
+
+	if (varExists(wallNormalMappingEnabled) = false)
+		setb wallNormalMappingEnabled false
+	endif
+
+   # some defaults
+	setb wallBumps false
+   setb caustics false
+   setb lightMapping false
+
+   #  Notes:
+   #  Highlights turn off ALL detail, lightmaps and normal maps and caustics.
+   #  Global bumpmapping must be on to get wall bumpmapping.
+   # Wht? ...these rules reduce all rendering to a single pass.
+
+   setb groovyHW false
+
+   if ($useHWShader2Path or $useHWShader1Path)
+      setb groovyHW true
+   endif
+   
+
+   setb wallMaskOK false
+   
+   if (varExists(wallMaskTextureName))
+      setb wallMaskOK true
+   endif
+   
+   
+   if ($tsCausticsPass and $wallHighlightOn = false and $groovyHW)
+      setb caustics true
+   endif
+   
+	
+	if (varExists(page) and $wallHighlightOn = false)
+		setb lightMapping true
+   endif
+
+
+	if (varExists(wallpaperNormalMapTextureEnabled))
+		if ($bumpMapping and $wallHighlightOn = false) # check global 'do bumpmaps' flag, no bumps when highlighting.
+			setb wallBumps true
+		endif
+	endif
+   
+
+	if ($wallNormalMappingEnabled = false)
+		setb wallBumps false
+	endif
+
+enddef
+
+
+#beginshader Wallpaper
+#description Material for wall
+define Wallpaper()
+   #trace "Wallpaper : $currentMaterialName"
+	material
+		create WallTextureShaders()
+	end
+enddef
+#endshader Wallpaper
+
+
+# Note: bump mapping is now controlled directly by stdMatNormalMapTextureEnabled, 
+# same as with StandardMaterial, so WallpaperBump is identical to Wallpaper, and
+# exists only for legacy reasons.
+
+#beginshader WallpaperBump
+#description Wall shader with diffuse color texture and normal map (LEGACY: you can just use Wallpaper for this)
+define WallpaperBump()
+   #trace "WallpaperBump : $currentMaterialName"
+
+	material
+		create WallTextureShaders()
+   end
+enddef
+#endshader WallpaperBump
+
+
+
+#beginshader WallMask
+#description Material for wall cutout for windows and doors
+#extraparam bool tsMirrorWallMask 0 ; set to true to mirror the texture in U
+define WallMask()
+   #trace "WallMask : $currentMaterialName"
+
+	material
+		if ($stdMatLightingDebug)
+			create LightingDebugStandardMaterialOverrides()
+		endif
+		
+		create WallMaskShaders($tsMirrorWallMask)
+	end
+enddef
+
+#endshader WallMask
+
+
+
+#beginshader WallpaperPool
+#description Material for wall
+#extraparam bool tsCausticsPass 1 ; set to true to add water caustics.
+define WallpaperPool()
+   #trace "WallpaperPool : $currentMaterialName"
+
+   material
+      if ($stdMatLightingDebug)
+         create LightingDebugStandardMaterialOverrides()
+      endif
+      create WallTextureShaders()
+   end
+enddef
+#endshader Wallpaper
+
+# Combined wallpaper and wall mask material used by the engine to 
+# optimize wall rendering when not in Build Mode. Selected parameters
+# are sucked out of the original separate wallpaper and mask materials,
+# and combined into this material.
+define WallpaperAndMask()
+   material
+      if (viewerRenderType = $kRenderTypeShadowMap)
+	      create ShadowMapVS_PS()
+	   else
+		   #trace "$currentMaterialName"
+         if (strstr("$currentMaterialName", "PoolWall") != 0 or strcmp("${wallpaperTextureName}", "wall-poolroundedlipblue-base") = 0)
+            setb tsCausticsPass 1
+         endif
+         if ($stdMatLightingDebug)
+            create LightingDebugStandardMaterialOverrides()
+         endif
+         create WallpaperAndMaskShaders()
+	   endif      
+   end
+enddef
+
+# --- WallTextureShaders -------------------------------------------------------------------------
+
+define WallTextureShaders()
+
+   #trace "WallTextureShaders: $currentMaterialName"
+
+	create DetermineHardwareSupport()
+	create SetupCommonWallFlags()
+   
+	if ($useFixedFunctionPath or $useSWVertexShaderPath)
+		create FixedFunctionWallTextureShader()
+	else
+		create PixelShaderWallTextureShader()
+	endif
+	
+enddef
+
+
+#only used in thumbnails as far as I can tell.
+
+define FixedFunctionWallTextureShader()
+
+	shader -layer $wallLayer
+    	validateRenderShaderContext -vertexFormat position 0 required
+		validateRenderShaderContext -vertexFormat normal 0 required
+		validateRenderShaderContext -vertexFormat texcoord 2 required
+
+		pass -fixedFunction
+			create AttenuatedMatCoef(0.5)
+
+			create LightingStates()
+
+	# what were these states for?
+	#		alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+	#		alphaTest true 0
+	#		alphaTestFunction acceptIfGreater
+	#		depthTest true -enableDepthWrite false
+	#		depthTestFunction acceptIfEqual
+	
+			depthTestFunction accept
+
+			fillmode $stdMatFillMode
+
+			# include light map stage if present.
+			if (varExists(page))
+				stage
+					create SelectWallLightMap()
+		               
+					# add the light map lighting to any direct lights.
+					# the light map has been prescaled by 0.5
+					textureBlend add(texture diffuse) select(texture)
+				end
+			endif
+	         
+			stage
+				texture $stdMatBaseTextureName ${stdMatBaseTextureParam}
+				textureAddressing tile tile
+				ffTextureCoordsSource 0
+				textureBlend multiplyScale2(texture outRegister) select(outRegister)
+			end
+		end
+	end
+	
+enddef
+
+
+
+
+# --- WallMaskShaders -------------------------------------------------------------------------
+
+# doesn't seem to be used anywhere, except in the thumbnails??, but there it isn't needed, so a null shader saves a pass
+
+define WallMaskShaders(tsMirrorWallMask)
+
+	shader
+	
+	end
+	
+		
+enddef
+
+
+
+
+# --- WallpaperAndMaskShaders -------------------------------------------------------------------------
+
+# main workhorse... all walls, with cutout or not (window, door) will go through this path.
+
+
+define WallpaperAndMaskShaders()
+
+
+   #trace "WallPaperAndMask: $currentMaterialName"
+   
+	create DetermineHardwareSupport()
+
+   create SetupCommonWallFlags()
+   
+   
+   if ($debugShowWallIncidence or  $debugShowWallLightmap or $debugShowWallNormalMap or $debugWallLighting)
+      create DebugPixelShaderWalls()
+   endif
+   
+	
+	if ($useHWShader1Path)
+		create PS1WallRendering($wallBumps)
+	else
+	
+	
+		if ($useHWShader2Path)
+			create PS2WallRendering($wallBumps)
+		else
+      	create FixedFunctionMaskedWallRendering()
+      endif
+		
+		
+	endif
+	
+
+	# ultimate fallback.
+	
+	
+
+
+enddef
+
+define ShadowMapVS()
+   shaderProgram -target vertexProgram -method compile -version 1_1
+      bindConstants 0 -bindingID geomToClip -constantCount 4						
+      
+	   shaderSource
+		   float4x4 clipSpaceMatrix  : register(c0);			   
+      
+	   struct InputVertex
+		   {
+			   float3 position: POSITION0;					
+		   };
+         
+		   struct OutputVertex
+		   {
+			   float4 clipPosition : POSITION;
+			   float2 depth  : TEXCOORD1;					
+		   };
+         
+		   OutputVertex VertexMain( InputVertex i)
+		   {
+			   OutputVertex o;
+			   o.clipPosition = mul(float4(i.position, 1), clipSpaceMatrix);
+			   o.depth = o.clipPosition.zw;
+			   return o;
+		   }
+	   endShaderSource  
+   end # end shader program
+enddef 
+
+define ShadowMapVS_PS()
+   shader -layer 0
+      pass
+         create ShadowMapVS()   
+         create ShadowMapPS()         
+      end
+   end      
+enddef
+
+define ShadowMapPS()
+   shaderProgram -target pixelProgram -method compile -version 2_0                        
+      shaderSource   
+         struct cInputPixel
+         {               
+            float2 depth : TEXCOORD1;               
+         };
+         
+         float4 PixelMain(cInputPixel pi) : COLOR
+         { 
+            float4 depth;
+            depth.x = pi.depth.x / pi.depth.y;
+            depth.y = depth.x * depth.x;    
+            depth.z = depth.x * depth.y;                                                          
+            return depth.xyzx;
+         }
+      endShaderSource
+   end # end shader program      
+enddef
+
+define FixedFunctionMaskedWallRendering()
+	shader -layer $wallLayer
+		validateRenderShaderContext -vertexFormat position 0 required
+		#validateRenderShaderContext -vertexFormat normal 0 required
+		validateRenderShaderContext -vertexFormat texcoord 0 required
+		validateRenderShaderContext -vertexFormat texcoord 1 required
+		
+		validateRenderShaderContext -viewerRenderType viewerRenderType
+		
+      setb maskedWall false
+
+      # first pass, write the wall, but drop pixels that fail the masking.
+      
+      
+      # only attempt wall masking if the variable was set by the app (apparently, it doesn't always get set)
+      if ($wallMaskOK)
+         # do the mask pass ONLY if it's a masked area!
+         if (strcmp("${wallMaskTextureName}", "wallsolid-mask") != 0)
+         
+            if ($caustics)
+               pass -fixedFunction -modifiedEachFrameHint
+            else
+               pass -fixedFunction
+            endif         
+            
+               #create LightingStatesNoStdLights()
+      
+               # we write only to the depth buffer, and only where the mask is white
+               #alphaBlend srcFactor(zero) add dstFactor(one)
+               alphaTest true 127
+               alphaTestFunction acceptIfGreater
+      
+               fillmode $stdMatFillMode
+      
+               depthTest true -enableDepthWrite true
+      
+               stage
+                  texture $wallMaskTextureName ${wallMaskTextureParam}
+                  # needs to clamp in both directions: in U because walls can vary in length
+                  # in order to close gaps between wall segments, in V because really tall
+                  # levels should not evince a repeat of the cutout.
+                  textureAddressing clamp clamp
+      
+                  if ($wallMaskMirrorFlag)
+                     textureTransformType vector2
+                     # translate tex coords so that after the negative scale in U,
+                     # the former (0,1) still maps in the range (0,1)
+                     ffTextureMatrix -scalev (-1, 1) -trans (1, 0)
+                  endif
+      
+                  # Wall system uses the second set of texture coordinates for the wall masks.
+                  ffTextureCoordsSource 1
+                  textureBlend select(texture) select(texture)
+               end
+            end  
+            
+            setb maskedWall true
+         endif
+      endif
+      
+
+      if ($caustics)
+         pass -fixedFunction -modifiedEachFrameHint
+      else
+         pass -fixedFunction
+      endif
+
+			#create AttenuatedMatCoef(0.5)
+
+			#create LightingStates()
+
+			#alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+			#alphaTest true 127
+			#alphaTestFunction acceptIfGreater
+
+         if ($maskedWall)
+            depthTest true -enableDepthWrite false
+            depthTestFunction acceptIfEqual
+         endif
+         
+         
+			fillmode $stdMatFillMode
+			colorScalar (1, 1, 1) 1
+
+
+         # for lightmapping:
+         # light map * base color
+         if (varExists(page))
+				stage
+					create SelectWallLightMap()
+					# add the light map lighting to any direct lights.
+					# the light map has been prescaled by 0.5
+					textureBlend select(texture) select(colorScalar)
+				end
+              
+              stage
+               texture $wallpaperTextureName ${wallpaperTextureParam}
+               if (viewerRenderType = $kRenderTypeThumbnail)			   
+                  textureAddressing tile tile
+               else
+                  textureAddressing clamp tile
+               endif
+               ffTextureCoordsSource 0
+               textureBlend multiplyScale2(outRegister texture) select(outRegister)
+            end
+			else
+            # no light map, single texture case.
+            stage
+               texture $wallpaperTextureName ${wallpaperTextureParam}
+               if (viewerRenderType = $kRenderTypeThumbnail)			   
+                  textureAddressing tile tile
+               else
+                  textureAddressing clamp tile
+               endif
+               ffTextureCoordsSource 0
+               textureBlend select(texture) select(colorScalar)
+            end
+         
+         endif
+         
+			
+                 
+		end
+ 
+  
+		create WallHighlightPass()
+	end
+   
+enddef
+
+define SelectWallLightMap()
+   texture "wallLightMap_${page}"
+   ffTextureCoordsSource 2
+enddef
+
+define SelectWallIncidenceMap()
+   texture "wallIncidenceMap_${page}"
+   ffTextureCoordsSource 2
+enddef
+
+define WallHighlightPass()
+   if ($wallHighlightOn)
+      # first pass for the additive part of the highlight texture
+      if ($caustics)
+         pass -fixedFunction -modifiedEachFrameHint
+      else
+         pass -fixedFunction
+      endif
+      
+         create LightingStates()
+
+         alphaBlend srcFactor(one) add dstFactor(one)
+         alphaTest true 0
+         alphaTestFunction acceptIfGreater
+
+         depthTest true -enableDepthWrite false
+         depthTestFunction acceptIfEqual
+
+         fillmode $stdMatFillMode
+
+         colorScalar ($wallHighlightIntensity)
+
+         stage
+            texture "wall_selection_colors"
+            # the mask coordinates are the closest to the one-texture-unit-per-tile mapping we want
+            ffTextureCoordsSource 1
+            textureAddressing clamp clamp
+            textureBlend multiplyAdd(texture colorScalar diffuse) select(texture)
+         end
+      end
+     
+      # second pass for the subtractive part of the highlight texture
+      if ($caustics)
+         pass -fixedFunction -modifiedEachFrameHint
+      else
+         pass -fixedFunction
+      endif
+      
+         create LightingStates()
+
+         alphaBlend srcFactor(one) sub dstFactor(one)
+         alphaTest true 0
+         alphaTestFunction acceptIfEqual
+
+         depthTest true -enableDepthWrite false
+         depthTestFunction acceptIfEqual
+
+         fillmode $stdMatFillMode
+
+         colorScalar ($wallHighlightIntensity)
+
+         stage
+            texture "wall_selection_colors"
+            # the mask coordinates are the closest to the one-texture-unit-per-tile mapping we want
+            ffTextureCoordsSource 1
+            textureAddressing clamp clamp
+            textureBlend multiplyAdd(texture colorScalar diffuse) select(texture)
+         end
+      end
+   endif
+enddef
+
+materialDefinition wallthumbnailmat
+   setDefinition StandardMaterial   
+   addParam   stdMatSpecPower 0
+   addParam   stdMatDiffCoef (0.8, 0.8, 1.0)
+   addParam stdMatBaseTextureName wall-wallBoard   
+   addParam   stdMatBaseTextureEnabled true   
+   addParam stdMatBaseTextureAddressingU tile
+   addParam stdMatBaseTextureAddressingV tile
+end

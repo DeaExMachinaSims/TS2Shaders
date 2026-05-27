@@ -1,0 +1,1671 @@
+#
+# Shaders for neighborhood
+#
+#
+
+# layers
+# normal shadows are layer 2 (after opaques), tree shadows are moved to -2 to make them
+#  render to the first buffer.  Tree shadows (-2) do not show up on fields (7).
+seti nhoodWaterLayer            1
+seti nhoodCanvasLayer          -8
+seti nhoodTreeShadowLayer      -2
+
+setf  neighborhoodMaterialScaleU 8.0  # defaults for neighborhood materials without these defined
+setf  neighborhoodMaterialScaleV 8.0  # defaults for neighborhood materials without these defined
+
+setf  nhoodWaterMap1Scale    7.0
+setf  nhoodWaterMap1Speed    0.5
+setf  nhoodWaterMap2Scale    5.0
+setf  nhoodWaterMap2Speed    0.3
+
+
+setv2 baseTexOffset (0.5, 0.5)
+setv3 nhoodDiffCoef (0.75, 0.93, 0.75)
+
+
+setf  nhoodPaintTextureScale  13      #Repeat distance of neighborhood textures in tiles. 
+                                     #NOTE: There is a related parameter called "TextureVariantGridSize" in 
+                                     #NeighborhoodTerrain.ini. You would normally (though not necessarily) want it to be
+                                     #the same as this number.
+setf  waterEdgeTextureScale   250.0  #Repeat distance in meters
+setf  terrainEdgeTextureScale 100.0  #Repeat distance in meters
+
+
+# Reflective water
+setc  nhoodWaterReflColour   (0.55, .6, 0.65)
+setc  lotSkirtWaterReflColour (0.65, 0.7, 0.85)
+setf  nhoodWaterReflStrength  0.75
+setf  nhoodWaterReflOffset    0.0020
+
+# Standard water
+setf nhoodWaterbumpMapScale 8.0
+setf nhoodWaterAlpha        0.35
+
+setb isDay true
+setb isTerrainConcrete false
+
+# water clipping plane
+setf waterHeight 312.45
+
+# underwater gradient texture
+set  waterGradientTexture neighborhood-underwater-gradient
+set  waterGradientTextureAdditive neighborhood-underwater-gradient-with-black
+# depth at which the gradient starts to take effect
+setf waterGradientZoneStart 0
+# how far down the gradient goes from that point.
+setf waterGradientZoneSize 40
+
+set skyboxCubeMap neighborhood-sky2-envcube
+
+# bump mapping
+setv3 nhoodSunDir (-0.5, 1, 0.5)   # default -- should be set by code from the lighting.txt value
+# overall kind-of brightness booster for bump map.
+setf  bumpMapBoost 1.5
+
+# ==============================================================================
+# derived bump map quantities
+define BiasedNormal(n bn)
+   setf  nLen (sqrt(sqr($&{n}.x) + sqr($&{n}.y) + sqr($&{n}.z)))
+   setv3 &{bn} ((0.5,0.5,0.5) * (($&{n} / $nLen.xxx) + (1,1,1)))
+enddef
+
+create BiasedNormal(nhoodSunDir nhoodSunDirBiased)
+setv3 nhoodSunDirBiased ($nhoodSunDirBiased * $bumpMapBoost.xxx)
+
+set terrainType "unset"
+
+# defaults off, can be turned on at startup.
+setb simpleTerrain false
+setb isImposter false
+
+include neighborhoodSWVS.matShad
+
+# ==============================================================================
+
+define NeighborhoodCanvas()
+
+# this material does nothing but prep the z-buffer, and render black.
+
+	material
+      if ($simpleTerrain)
+         shader
+         end
+      endif
+
+      shader -layer (($nhoodCanvasLayer) * 8)
+         
+         validateRenderShaderContext -vertexFormat  position      0 required
+         validateRenderShaderContext -vertexFormat  normal        0 required
+         
+         if (not $isImposter)         
+            validateRenderShaderContext -vertexFormat  texcoord      0 required
+         endif
+         viewerRenderTypePred viewerRenderType
+            
+         create DetermineHardwareSupport()
+         
+         if (strcmp("Concrete", "${terrainType}") = 0)
+            setb isTerrainConcrete true
+         endif
+
+         if (not $isUnderWater or viewerRenderType != $kRenderTypeReflection)
+            if ($useSWVertexShaderPath)
+               create NeighborhoodTerrainPrepWorkSWVS()
+            else
+               pass -fixedFunction
+                  create LightingStatesNoStdLights()
+                  
+                  cullmode none # so that reflections don't "creep under" edge of terrain
+                  colorScalar (0.0, 0.0, 0.0, 1.0)
+                                    
+                  if ($isImposter and $isTerrainConcrete)
+                     ffDepthOffset -1
+                  endif
+
+                  stage
+                     if (not $isImposter)
+                        ffTextureCoordsSource fromPosition
+                     endif
+                     textureBlend select(colorScalar) select(outRegister)
+                  end 
+               end
+            endif
+            
+         endif
+         
+      end
+   end
+enddef
+
+
+# ==============================================================================
+# Used for those triangles in the canvas which are partially under water.
+#
+define NeighborhoodCanvasStraddle()
+	material
+
+      if ($simpleTerrain)
+         shader
+         end
+      endif
+
+# material for reflection camera
+
+      shader -layer (($nhoodCanvasLayer) * 8)
+      
+			validateRenderShaderContext -vertexFormat  position      0 required
+			validateRenderShaderContext -vertexFormat  normal        0 required
+			validateRenderShaderContext -vertexFormat  texcoord      0 required
+			viewerRenderTypePred $kRenderTypeReflection
+	         
+			#Render the portion that is above water only
+	         
+			create DetermineHardwareSupport()
+	         
+			if ($useSWVertexShaderPath)
+					
+				create NeighborhoodWaterlineStraddleSWVS()
+							
+			else
+	         
+				pass -fixedFunction
+					create LightingStatesNoStdLights()
+					alphaBlend srcFactor(one) add dstFactor(zero)
+					cullmode none # so that reflections don't "creep under" edge of terrain
+					colorScalar (0.0, 0.0, 0.0, 1.0)
+
+					alphaTest true 128
+					alphaTestFunction acceptIfGreater
+
+					stage
+						# above water -- clip by using depth-based 0/1 texture.
+						texture blackWhite
+						textureAddressing clamp clamp
+						textureFilterHint point point
+						textureMIPFilterHint disabled
+			                  
+						ffTextureMatrix -cameraToGlobal -order zzzw -trans ($waterHeight - 0.5, 0) -invert
+						ffTextureCoordsSource fromPosition
+						textureBlend select(colorScalar) select(texture)
+					end 
+				end
+			endif
+		
+		end
+      
+      
+      
+      #material for standard camera   
+      #shader -layer (-128)      
+		shader -layer (-128)
+		
+			validateRenderShaderContext -vertexFormat  position      0 required
+			validateRenderShaderContext -vertexFormat  normal        0 required
+			validateRenderShaderContext -vertexFormat  texcoord      0 required
+			viewerRenderTypePred $kRenderTypeNormal
+	        
+			create DetermineHardwareSupport()
+	         
+			if ($useSWVertexShaderPath)
+				create NeighborhoodWaterlineStraddleStandardCameraSWVS()
+			else
+	        
+				#Render the portion that is above water only
+				pass -fixedFunction
+					create LightingStatesNoStdLights()
+					alphaBlend srcFactor(one) add dstFactor(zero)
+					cullmode none # so that reflections don't "creep under" edge of terrain
+					colorScalar (0.0, 0.0, 0.0, 1.0)
+
+					stage
+						textureBlend select(colorScalar) select(outRegister)
+					end 
+				end
+			endif
+		
+		end
+      
+	end
+enddef
+
+# ==============================================================================
+# Material for terrain geometry that is partially or completely under water.
+define NeighborhoodWaterTerrain()
+	material
+   
+      if ($simpleTerrain)
+         shader
+         end
+      endif
+      
+		shader -layer (($nhoodCanvasLayer + 2) * 8)
+			validateRenderShaderContext -vertexFormat  position      0 required
+			validateRenderShaderContext -vertexFormat  normal        0 required
+			validateRenderShaderContext -vertexFormat  texcoord      0 required
+			viewerRenderTypePred viewerRenderType
+
+		
+			create DetermineHardwareSupport()
+					
+			if (viewerRenderType != $kRenderTypeReflection)         
+			
+				if ($useSWVertexShaderPath)
+					create NeighborhoodUnderWaterTerrainSWVS()
+				
+				else
+			
+					pass -fixedFunction
+					
+					
+						create LightingStatesNoStdLights()
+						
+						alphaBlend srcFactor(destColor) add dstFactor(zero)
+						cullmode none # so that reflections don't "creep under" edge of terrain
+						# apply depth-based gradient texture to terrain that is under water.
+						stage
+							texture $waterGradientTexture
+							
+							if ($cubeMapSupport)													
+							   textureAddressing tile clamp
+							else
+							   textureAddressing clamp clamp
+							endif
+							   			                  
+							set d ($waterHeight - $waterGradientZoneStart) 
+							set s (-$waterGradientZoneSize) 
+							ffTextureMatrix -cameraToGlobal -order xzyw -scale $s -trans (0, $d) -invert
+							ffTextureCoordsSource fromPosition
+							textureBlend select(texture) select(outRegister)
+						end
+					end 
+					
+				endif
+				
+			endif
+			
+		end
+	end
+enddef
+
+# ==============================================================================
+
+define NeighborhoodTerrainPaintShader()
+   shader -layer (($nhoodCanvasLayer + 1) * 8)
+      validateRenderShaderContext -vertexFormat  position      0 required
+      validateRenderShaderContext -vertexFormat  normal        0 required
+            
+         if (not $isImposter)
+            validateRenderShaderContext -vertexFormat  texcoord      0 required
+         endif
+
+		   create DetermineHardwareSupport()
+		   
+		   if (strcmp("Concrete", "${terrainType}") = 0)
+            setb isTerrainConcrete true
+         endif
+   		
+		   if ($useSWVertexShaderPath)			
+			   create NeighborhoodMainTerrainShaderSWVS()
+   			
+		   else
+
+			   pass -fixedFunction
+   			
+				   create LightingStatesNoStdLights()
+				   alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+				   cullmode none # so that reflections don't "creep under" edge of terrain
+				   
+				   if ($isImposter and $isTerrainConcrete)
+                  ffDepthOffset -1
+               endif
+   		                     
+				   colorScalar $nhoodSunDirBiased
+   		         
+				   depthTest true -enableDepthWrite false
+				   depthTestFunction acceptIfEqual
+   				
+				   seti snowLevel (tsHasSnow)
+   				
+				   if ($snowLevel = 1)				
+				      set weatherSuffix "-LSNOW"
+				   elseif ($snowLevel = 2)
+                  set weatherSuffix "-HSNOW"
+               else
+                  set weatherSuffix ""
+               endif
+               
+				   stage
+					   texture $alphaMap
+					   textureAddressing clamp clamp
+   					
+                  if ($isImposter)
+						   ffTextureMatrix -cameraToGlobal -scalev ((0.1 * $alphaMapScaleU), (0.1 * $alphaMapScaleV))
+						   ffTextureCoordsSource fromPosition
+					   else					
+					      ffTextureMatrix -scalev ($alphaMapScaleU, $alphaMapScaleV) 
+					      ffTextureCoordsSource 0
+					   endif
+					   textureBlend select(outRegister) select(texture)
+				   end 
+   				
+				   stage				   
+					   texture "${paintTexture}${weatherSuffix}"
+					   textureAddressing tile tile
+					   if ($isImposter)
+						   ffTextureMatrix -cameraToGlobal -scalev ((10.0 * $nhoodPaintTextureScale), (10.0 * $nhoodPaintTextureScale)) -invert
+						   ffTextureCoordsSource fromPosition
+					   else					
+					      ffTextureMatrix -scalev ($nhoodPaintTextureScale, $nhoodPaintTextureScale) -invert
+					      ffTextureCoordsSource 0
+					   endif
+					   textureBlend select(texture outRegister) select(outRegister)
+				   end 
+			   end       
+         endif		
+		
+	end
+enddef
+
+define NeighborhoodTerrainPaint()
+   material
+      
+      if ($simpleTerrain)
+         shader
+         end
+      endif
+      
+      create NeighborhoodTerrainPaintShader()
+   end
+enddef
+ 
+
+# ==============================================================================
+
+set ratioH 1   # default material parameter value
+set ratioW 1   # default material parameter value
+set useReflection 1 # default material parameter value
+define NeighborhoodWater()
+   material
+      # never draw water in its reflection.  Already handled by code.				
+
+      if ($simpleTerrain)
+         shader -layer $nhoodWaterLayer
+            pass -fixedFunction 
+               colorScalar (0.3, 0.4,0.8) 1.0
+               stage 
+                  textureBlend select(colorScalar) select(colorScalar)
+               end
+            end
+         end
+      endif
+
+
+      # First option: reflection mapped water.
+      if ($useReflection)
+
+         shader -layer $nhoodWaterLayer
+            validateRenderShaderContext -vertexFormat  position      0 required
+            validateRenderShaderContext -vertexFormat  normal        0 required
+            validateRenderShaderContext -vertexFormat  texcoord      0 required
+            viewerRenderTypePred viewerRenderType
+
+            ################################################################################
+            # Three pass/2 texture rippled reflection -- does not run on GeF2 only 2 stages (for GeF4+)
+            pass -fixedFunction -modifiedEachFrameHint
+            
+            
+               alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+               colorScalar $nhoodWaterReflColour $nhoodWaterReflStrength
+               depthTest true -enableDepthWrite false
+               
+               stage
+                  ffTextureCoordsSource fromPosition
+                  ffTextureMatrix -cameraToClip -scalev ((-0.5 * $ratioW), (-0.5 * $ratioH)) -trans (0.5, 0.5)
+                  textureAddressing clamp clamp
+                  texture "ScreenReflection"
+                  
+                  textureBlend multiply(texture colorScalar) select(outRegister) tempRegister
+               end 
+               stage
+                  ffTextureCoordsSource fromPosition
+                  ffTextureMatrix -cameraToClip -scalev ((-0.5 * $ratioW), (-0.5 * $ratioH)) -trans (0.5 + $nhoodWaterReflOffset, 0.5 + $nhoodWaterReflOffset)
+                  textureAddressing clamp clamp
+                  
+                  texture "ScreenReflection"
+                  textureBlend multiply(texture colorScalar) select(outRegister)
+               end             
+               stage
+                  texture "neighborhood-water-1"
+                  textureAddressing tile tile
+                  # -atrans waveformType cycles/sec offset (startU, startV)  (endU, endV)
+                  textureMatrixAnimation -targetType fixedFunction -atrans sawtooth ($nhoodWaterMap1Speed / $nhoodWaterMap1Scale) 0 (0, 0) ($nhoodWaterMap1Scale, 0) -ascale sawtooth 1 0 ($nhoodWaterMap1Scale, $nhoodWaterMap1Scale)
+                  ffTextureCoordsSource 0
+                  textureBlend lerpTextureAlpha(tempRegister outRegister) select(colorScalar)
+               end 
+            end
+         end
+        
+         shader -layer $nhoodWaterLayer
+            validateRenderShaderContext -vertexFormat  position      0 required
+            validateRenderShaderContext -vertexFormat  normal        0 required
+            validateRenderShaderContext -vertexFormat  texcoord      0 required
+            viewerRenderTypePred viewerRenderType
+
+            ################################################################################
+            # Two stage case since the three stage case above fails on most low end hardware because of its third stage (GF2).
+            pass -fixedFunction -modifiedEachFrameHint
+            
+            
+               alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+               colorScalar $nhoodWaterReflColour $nhoodWaterReflStrength
+               depthTest true -enableDepthWrite false
+               
+               stage
+                  ffTextureCoordsSource fromPosition
+                  ffTextureMatrix -cameraToClip -scalev ((-0.5 * $ratioW), (-0.5 * $ratioH)) -trans (0.5, 0.5)
+                  textureAddressing clamp clamp
+                  texture "ScreenReflection"
+                  
+                  textureBlend multiply(texture colorScalar) select(outRegister)
+               end 
+               
+               stage
+                  texture "neighborhood-water-1"
+                  textureAddressing tile tile
+                  # -atrans waveformType cycles/sec offset (startU, startV)  (endU, endV)
+                  #textureMatrixAnimation -targetType fixedFunction -atrans sawtooth ($nhoodWaterMap1Speed / $nhoodWaterMap1Scale) 0 (0, 0) ($nhoodWaterMap1Scale, 0) -ascale sawtooth 1 0 ($nhoodWaterMap1Scale, $nhoodWaterMap1Scale)
+                  ffTextureCoordsSource 0
+                  textureBlend lerpTextureAlpha(outRegister outRegister) select(colorScalar)
+               end
+               
+            end
+         end
+         
+      endif
+      
+      ################################################################################
+      # fallback: no reflection.
+      shader -layer ($nhoodWaterLayer)
+         viewerRenderTypePred viewerRenderType
+         
+         create DetermineHardwareSupport()
+         
+         pass -fixedFunction
+			   # For now, we are diabling the lighting since we simply want to use the vertex colors.
+			   create LightingStatesNoStdLightsParam(false true)
+			   alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+			   
+            colorScalar (.4, .6, .9, .6)      
+            
+            fillmode $stdMatFillMode
+            stage
+               #texture reflectionoutdoorwater-envcube
+               if ($cubeMapSupport)
+                  texture $skyboxCubeMap
+                  textureMIPFilterHint disabled
+
+                  ffTextureCoordsSource fromReflectionVector
+                  ffTextureMatrix -orientCameraToGlobal
+
+                  textureAddressing clamp clamp clamp
+                  textureBlend multiply(texture colorScalar) select(colorScalar)
+               else
+                  textureBlend select(colorScalar) select(colorScalar)
+               endif
+            end  
+         end   
+ 
+      end
+	
+	
+      ################################################################################
+      # Final fallback.
+		#<shader -layer ($nhoodWaterLayer)
+			viewerRenderTypePred viewerRenderType
+			
+				pass -fixedFunction
+				
+					fillmode $stdMatFillMode
+					create LightingStatesNoStdLights()
+					alphaBlend srcFactor(one) add dstFactor(srcAlpha)
+					colorScalar (.2, .3, .5, .05)      
+					stage
+						textureBlend select(colorScalar) select(colorScalar)
+					end 
+				end
+			
+	 
+		end#>
+		
+        create NeighborhoodWaterSWVS()
+                
+      
+	end
+	
+enddef
+
+
+# ==============================================================================
+# The layer ID for this should be lower than "nhoodWaterLayer" Id because we want the farther side of the water box should be
+# drawn as well.
+# the layer ID of any under-water objects (so
+define NeighborhoodWaterEdge()
+
+   material
+      if ($simpleTerrain)
+         shader
+         end
+      endif
+      
+      
+      shader -layer (($nhoodWaterLayer - 1) * 8)
+         validateRenderShaderContext -vertexFormat  position      0 required
+         validateRenderShaderContext -vertexFormat  texcoord      0 required
+         
+         pass -fixedFunction
+            create LightingStates()
+            alphaBlend srcFactor(one) add dstFactor(zero)
+            cullmode cullCounterClockwise
+
+            stage
+               texture $waterEdgeTexture
+               textureAddressing tile tile
+               ffTextureMatrix -scalev (1/$waterEdgeTextureScale, 1/$waterEdgeTextureScale)
+               ffTextureCoordsSource 0
+               textureBlend select(texture) select(diffuse)
+            end 
+         end    
+           
+      end
+   end
+  
+enddef
+
+# ==============================================================================
+define NeighborhoodTerrainEdge()
+   material
+   
+      if ($simpleTerrain)
+         shader
+         end
+      endif
+      
+      shader -layer (($nhoodCanvasLayer + 13) * 8)
+         validateRenderShaderContext -vertexFormat  position      0 required
+         validateRenderShaderContext -vertexFormat  normal        0 required
+         validateRenderShaderContext -vertexFormat  texcoord      0 required
+
+         pass -fixedFunction
+            create LightingStates()
+            alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+            stage
+               texture $terrainEdgeTexture
+               textureAddressing tile tile
+               ffTextureMatrix -scalev (1/$terrainEdgeTextureScale, 1/$terrainEdgeTextureScale)
+               ffTextureCoordsSource 0
+               textureBlend multiply(texture diffuse) select(texture)
+            end 
+         end       
+        
+      end
+   end
+enddef
+
+#==============================================================================
+define NHoodTerrainLighting()
+
+   set terrainRepresentativeTexture "lottexture-test-01_detail"
+
+	material
+		shader -layer (($nhoodCanvasLayer + 3) * 8)
+			validateRenderShaderContext -vertexFormat  position      0 required
+			validateRenderShaderContext -vertexFormat  normal        0 required
+						
+			if (not $isImposter)			
+			   validateRenderShaderContext -vertexFormat  texcoord      0 required
+			endif
+					
+
+         if (strcmp("Concrete", "${terrainType}") = 0)
+            setb isTerrainConcrete true
+         endif
+      
+         if ($simpleTerrain)
+         
+            if (strcmp("Desert", "${terrainType}") = 0)
+               set terrainRepresentativeTexture "lottexture-canvas-desert"
+            endif
+         
+            shader
+               pass -fixedFunction                  
+					   ffDepthOffset -1			         			         
+
+                  stage
+     						texture "nhoodLightMap"     						
+     						if ($isImposter)
+						      ffTextureMatrix -cameraToGlobal -scalev (1280, 1280) -invert
+						      ffTextureCoordsSource fromPosition
+						   else
+						      ffTextureMatrix -scalev (128, 128) -invert
+						      ffTextureCoordsSource 0
+						   endif
+     						                     
+                     textureBlend select(texture) select(texture)
+                  end 
+                  
+                  stage 
+    						texture $terrainRepresentativeTexture    						
+    						if ($isImposter)
+						      ffTextureMatrix -cameraToGlobal -scalev (160, 160) -invert
+						      ffTextureCoordsSource fromPosition
+						   else
+						      ffTextureMatrix -scalev (16, 16) -invert
+						      ffTextureCoordsSource 0
+						   endif
+    						
+                     #textureBlend multiply(texture outRegister) select(outRegister)
+                     textureBlend select(texture outRegister) select(outRegister)
+                  end
+               end
+            end
+            
+         endif
+      
+
+			create DetermineHardwareSupport()
+			
+			if ($useSWVertexShaderPath)
+				create NeighborhoodTerrainLightingSWVS()
+			else
+				pass -fixedFunction
+				
+					create LightingStatesNoStdLights()
+					
+					# standard Lightmap * dest
+					alphaBlend srcFactor(destColor) add dstFactor(zero)
+					
+					# if the outbound 'clip' texture has 0 in it, don't emit those pixels.
+					alphaTest true 127
+					alphaTestFunction acceptIfGreater
+					 
+					
+					fillmode $stdMatFillMode
+					
+					if ($isImposter and $isTerrainConcrete)			
+					   ffDepthOffset -1			         
+			      endif
+						            
+					depthTestFunction acceptIfEqual
+		            # emit the lightmap
+					stage
+						texture "nhoodLightMap"
+						if ($isImposter)
+						   ffTextureMatrix -cameraToGlobal -scalev (1280, 1280) -invert
+						   ffTextureCoordsSource fromPosition
+						else
+						   ffTextureMatrix -scalev (128, 128) -invert
+						   ffTextureCoordsSource 0
+						endif
+						
+						if (tsHasSnow >= 1)
+						   colorScalar (0.3, 0.3, 0.35, 0)
+					   else
+					      colorScalar (0, 0, 0, 0)
+					   endif
+						
+						textureBlend add(texture colorScalar) select(texture)
+					end  
+					
+					# modulate by the 'above water' texture, which is a 2x1 texture with black and white in it.
+					
+					stage
+						# above water -- clip by using depth-based 0/1 texture.
+						texture blackWhite
+						textureAddressing clamp clamp
+						textureFilterHint point point
+						textureMIPFilterHint disabled
+			                  
+						if ( $isImposter)
+						   ffTextureMatrix -cameraToGlobal -order zzzw -trans ($waterHeight - 10, 0) -invert
+	               else
+						   ffTextureMatrix -cameraToGlobal -order zzzw -trans ($waterHeight - 0.5, 0) -invert
+						endif
+						ffTextureCoordsSource fromPosition
+						textureBlend multiply(texture:alphaReplicate outRegister) select(texture)
+					end 
+				end
+			endif		   
+		end
+	end
+	
+enddef
+
+
+# ==============================================================================
+
+define NHoodTerrainHighlightMaterial()
+   material
+      shader -layer (($nhoodCanvasLayer + 9) * 8)
+         validateRenderShaderContext -vertexFormat  position      0 required
+         validateRenderShaderContext -vertexFormat  normal        0 required
+         validateRenderShaderContext -vertexFormat  texcoord      0 required
+
+		create DetermineHardwareSupport()
+		
+		if ($useSWVertexShaderPath)
+			create NeighborhoodTerrainHighlightSWVS()
+		else
+			pass -fixedFunction
+				create LightingStates()
+				alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+				fillmode $stdMatFillMode
+  				colorScalar (1, 1, 1, $highlightAlpha)
+	            
+				stage
+					texture $highlightTexture
+					textureAddressing tile tile
+					textureBlend select(texture) multiply(texture colorScalar)
+				end 
+			end     
+		endif
+		  
+      end
+   end
+enddef
+
+# ==============================================================================
+define NHoodTerrainOutlineHighlightMaterial()
+   material
+      shader -layer (($nhoodCanvasLayer + 10) * 8)
+         validateRenderShaderContext -vertexFormat  position      0 required
+         validateRenderShaderContext -vertexFormat  normal        0 required
+         validateRenderShaderContext -vertexFormat  texcoord      0 required
+
+			pass -fixedFunction
+			   create LightingStatesNoStdLights()
+				alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+				fillmode $stdMatFillMode
+				depthTest true -enableDepthWrite false
+	            
+				stage
+					texture $texture
+					textureAddressing clamp clamp
+					ffTextureCoordsSource 0
+					textureBlend select(texture) select(texture)
+				end 
+			end     
+			
+      end
+   end
+enddef
+
+# ==============================================================================
+setb nhoodIsPartlyUnderwater false
+define PartiallyUnderWaterMaterial()
+
+   seti vt viewerRenderType
+   
+	## prevents the thumbnails of rocks and such from being 'under water', by punting to standard material.
+   # thumbnails are rendered at 0,0,0, but water tends to be above them at 312 ft/yards whatever.
+   
+	if (viewerRenderType = $kRenderTypeThumbnail)
+		create StandardMaterial()       
+    else
+    	create UnderWaterShadingMaterial()
+	endif
+	
+enddef
+ 
+define UnderWaterShadingMaterial()
+   
+   material
+      shader -layer (($nhoodCanvasLayer + 4) * 8)
+         validateRenderShaderContext -vertexFormat  position 0 required
+         validateRenderShaderContext -vertexFormat  normal   0 required
+         validateRenderShaderContext -viewerRenderType viewerRenderType
+   
+         if ($stdMatBaseTextureEnabled)
+            validateRenderShaderContext -vertexFormat  texcoord 0 required
+         endif
+   
+
+   
+         pass -fixedFunction
+   
+            ffMatCoef -amb $stdMatDiffCoef -ambAlpha $stdMatAlphaMultiplier -diff $stdMatDiffCoef  -diffAlpha $stdMatAlphaMultiplier -emit $stdMatEmissiveCoef -emitAlpha $stdMatAlphaMultiplier -spec $stdMatSpecCoef -specPow $stdMatSpecPower
+   
+            create StandardShaderFBAlphaState($stdMatAlphaBlendMode)
+            fillmode $stdMatFillMode
+            cullmode $stdMatCullMode
+   
+            create LightingStates()                        
+                        
+            stage
+               create StandardShaderTextureState(Base)               
+               textureBlend multiply(texture outRegister) multiply(texture outRegister)               
+            end
+            
+            #################################################################
+            if ($stdMatIsPartlyUnderwater and tsIsInNeighborhood)
+               if (viewerRenderType = $kRenderTypeReflection)
+                  alphaTest true 128
+                  alphaTestFunction acceptIfGreater
+                  stage
+                     # above water -- clip by using depth-based 0/1 texture.
+                     texture blackWhite
+                     textureAddressing clamp clamp
+                     textureFilterHint point point
+                     textureMIPFilterHint disabled
+                        
+                     ffTextureMatrix -cameraToGlobal -order zzzw -trans ($waterHeight - 0.5, 0) -invert
+                     ffTextureCoordsSource fromPosition
+                     textureBlend multiply(texture outRegister) select(texture)
+                  end 
+               else
+                  stage
+                     # would we want to source this from somewhere?
+                     texture $waterGradientTexture
+                     textureAddressing tile clamp
+                     
+                     set d ($waterHeight - $waterGradientZoneStart) 
+                     set s (-$waterGradientZoneSize)
+                     ffTextureMatrix -cameraToGlobal -order xzyw -scale $s -trans (0, $d) -invert
+                     ffTextureCoordsSource fromPosition
+                     textureBlend multiply(texture outRegister) select(outRegister)
+                  end         
+               endif
+            else
+               # if we are in lot mode and we want to fade this shape
+               if (numLightsOfType(${kShapeColorLight}) != 0) 
+                  alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+                  depthTest true -enableDepthWrite false
+                  colorScalar (1, 1, 1, 1) -applyShapeColor 0 
+                  stage
+                     textureBlend select(outRegister) select(colorScalar)
+                  end
+               endif
+            endif
+            #################################################################
+         end
+         
+         seti weatherLightCount (numLightsOfType(${kWeatherLight}))
+   	      
+      end
+      
+      # fallback shader, no darken by depth, since "FromPosition" tends to be totally FUBAR  in SWVP.
+      shader -layer (($nhoodCanvasLayer + 4) * 8)
+      
+		pass -fixedFunction
+   
+            ffMatCoef -amb $stdMatDiffCoef -ambAlpha $stdMatAlphaMultiplier -diff $stdMatDiffCoef  -diffAlpha $stdMatAlphaMultiplier -emit $stdMatEmissiveCoef -emitAlpha $stdMatAlphaMultiplier -spec $stdMatSpecCoef -specPow $stdMatSpecPower
+   
+            create StandardShaderFBAlphaState($stdMatAlphaBlendMode)
+            fillmode $stdMatFillMode
+            cullmode $stdMatCullMode
+   
+            create LightingStates()
+            
+            stage
+               create StandardShaderTextureState(Base)               
+               textureBlend multiply(texture outRegister) multiply(texture outRegister)
+            end
+            
+            # if we are in lot mode and we want to fade this shape
+            if (not tsIsInNeighborhood and numLightsOfType(${kShapeColorLight}) != 0) 
+               alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+               depthTest true -enableDepthWrite false
+               colorScalar (1, 1, 1, 1) -applyShapeColor 0 
+               stage
+                  textureBlend select(outRegister) select(colorScalar)
+               end
+            endif
+            
+		end
+		
+      
+      end
+
+   end
+ 
+enddef
+
+
+
+# ===================================================================================
+define ImposterArrowMaterial()
+   material
+      shader -layer (($nhoodCanvasLayer + 11) * 8)
+         
+         validateRenderShaderContext -vertexFormat  position      0 required
+         validateRenderShaderContext -vertexFormat  normal        0 required
+         validateRenderShaderContext -vertexFormat  texcoord      0 required
+
+			pass -fixedFunction
+			   create LightingStatesNoStdLights()
+				alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+				fillmode $stdMatFillMode
+            # TODO: change this, cannot turn off depth since that is used for dirty rect
+				depthTest false -enableDepthWrite false
+	            
+				stage
+					texture $texture
+					textureAddressing tile tile
+					ffTextureCoordsSource 0
+					textureBlend select(texture) select(texture)
+				end 
+			end     
+      end
+   end
+enddef
+
+# ===================================================================================
+
+define NeighborhoodTreeGUOBMaterial()
+
+# $stdMatTextureName
+# $stdMatAlphaMulitplier
+
+  # TODO: fix these so that they are not hardcoded, must be passed through content
+  set  textureName      "genericroundsoftguob-alpha"
+  setf alphaMultiplier  0.65
+
+  # try using vs_2_sw on the trees since sw vs is not as susceptible to state changes
+
+  # this only handles tree GUOBs in the nhood.
+  material
+   
+      #the engine will try this shader first..
+      shader -layer $nhoodTreeShadowLayer
+        # shadows can never be seen in reflections (they're on the ground)
+        viewerRenderTypePred $kRenderTypeReflection false
+	      
+        pass
+           alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+           depthTest true -enableDepthWrite false
+           
+            shaderProgram -target vertexProgram -method assemble
+              bindConstants 0 -bindingID geomToClip -constantCount 4
+              shaderSource
+                 vs_1_1
+                 dcl_position v0
+                 dcl_texcoord v1
+                 m4x4 oPos, v0, c0
+                 mov oT0, v1
+                 
+              endShaderSource
+            end
+           
+            shaderProgram -target pixelProgram -method assemble
+               shaderSource
+                  ps_1_1
+                  def c0,1,1,1,$alphaMultiplier
+                  tex t0
+                  mul r0,t0, c0
+               endShaderSource
+               
+            end
+            
+            sampler 0
+              texture $textureName
+              textureAddressing clamp clamp clamp
+            end
+        end
+      end
+      
+   # and fall back to this one if it can't render the above.
+   shader -layer $nhoodTreeShadowLayer
+        # shadows can never be seen in reflections (they're on the ground)
+        viewerRenderTypePred $kRenderTypeReflection false
+	      
+        pass -fixedFunction
+           alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+           depthTest true -enableDepthWrite false
+           
+           colorScalar (1,1,1, $alphaMultiplier)
+           
+           stage
+              texture $textureName
+              textureAddressing clamp clamp clamp
+              textureBlend select(texture) multiply(texture colorScalar)
+           end
+        end
+   end
+    
+  end
+
+enddef
+
+#=======================================================================================
+define NeighborhoodBuildingMaterial()
+   material  
+      shader -layer 0  
+         setb isDay tsIsDay
+         setb shouldShow (($showOnDay and $isDay) or ((not $showOnDay) and (not $isDay)))
+         if ($shouldShow)
+            pass -fixedFunction    
+               
+               if (numLightsOfType(${kShapeColorLight}) > 0)               
+                  alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+                  depthTest true -enableDepthWrite false               
+                  colorScalar (1, 1, 1, 1) -applyShapeColor 0 
+               else
+                  colorScalar (1, 1, 1, 1)
+               endif     
+               
+               
+               if ($isDay) #lighting is only applied at day time
+                  ffLighting -enable true -localViewer false -normalizeNormals false
+                  create NonStandardLighting()            
+                  ffMatCoef -amb (0.8,0.8,0.8) -ambAlpha 1.0 -diff (0.8,0.8,0.8) -diffAlpha 1.0	-spec (0,0,0) -specPow 0
+               
+                  stage
+                     ffTextureCoordsSource 0
+                     texture $texMaterial
+                     textureBlend multiply(texture diffuse) multiply(texture colorScalar)
+                  end
+               else
+                  stage
+                     ffTextureCoordsSource 0
+                     texture $texMaterial
+                     textureBlend select(texture) multiply(texture colorScalar)
+                  end
+               endif
+            end            
+         endif
+      end
+   end   
+enddef
+#============================================================================================
+
+# make tree shadows render to an opaque (but blended layer) so they drop into the static layer
+# this overrides the texture name and alpha blend level.
+
+materialDefinition neighborhood_roundshadow
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+
+# rectangular shadows are used by the car shadows, until can pass the existing texture name onto the material, 
+# leave those shadows as transparent layer 7 that will get alpha sorted, etc.
+#materialDefinition neighborhood_rectangularshadow
+#   setDefinition NeighborhoodTreeGUOBMaterial
+#end
+
+# forest
+materialDefinition forest_01_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+materialDefinition forest_02_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+
+
+# oak
+materialDefinition treeoak01_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+materialDefinition treeoak02_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+materialDefinition treeoak03_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+materialDefinition treeoak04_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+materialDefinition treeoak05_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+materialDefinition treeoak06_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+
+# scrub oak
+materialDefinition neighborhoodtreescruboak_shadows_alpha
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+
+# birch
+materialDefinition treebirch01_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+  
+end
+materialDefinition treebirch02_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+   
+end
+materialDefinition treebirch03_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+
+end
+materialDefinition treebirch04_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+materialDefinition treebirch05_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+materialDefinition treebirch06_shadows
+   setDefinition NeighborhoodTreeGUOBMaterial
+end
+
+# TODO: need to redefine the tree shaders, at least skip in reflections
+#  this is also causing massive batch count for main view (scrolling)
+# all trees should be combined into a single part/texture atlas with their shadows
+# render them after the terrain
+#materialDefinition treeoak01_diffuse
+#   setDefinition StandardMaterial
+#end
+
+
+# ===================================================================================
+
+materialDefinition neighborhood-canvas-outOfWater
+   setDefinition NeighborhoodCanvas
+   addParam   isUnderWater false
+end
+
+materialDefinition neighborhood-canvas-underwater
+   setDefinition NeighborhoodCanvas
+   addParam   isUnderWater true
+end
+
+materialDefinition neighborhood-canvas-straddle
+   setDefinition NeighborhoodCanvasStraddle
+end
+
+materialDefinition neighborhood-underwater-terrain
+   setDefinition NeighborhoodWaterTerrain
+end
+
+materialDefinition waterEdgeBoxMaterial
+   setDefinition NeighborhoodWaterEdge
+   addParam waterEdgeTexture "neighborhood-sides-water"
+end
+
+materialDefinition terrainEdgeBoxMaterial
+   setDefinition NeighborhoodTerrainEdge
+   addParam terrainEdgeTexture "neighborhood-sides-dirt"
+end
+
+materialDefinition nhoodTerrainLightingMaterial
+   setDefinition NHoodTerrainLighting
+end
+
+materialDefinition nhoodTerrainLightingMaterialImposter
+   setDefinition NHoodTerrainLighting
+   addParam isImposter true
+end
+
+materialDefinition nhoodReflectionSkybox
+   setDefinition SkyboxCompositionPassMaterial
+   addParam skyboxCubeTexture $skyboxCubeMap
+end
+
+materialDefinition lotSkirtReflectionSkybox
+   setDefinition SkyboxCompositionPassMaterial
+   addParam skyboxCubeTexture $skyboxCubeMap
+end
+
+materialDefinition lotPlacementArrow
+   setDefinition ImposterArrowMaterial
+   addParam texture lot-placement-arrow
+end
+
+# Material used in highlighting the terrain to depict a house for which no imposter exists yet.
+materialDefinition DefaultResidentialLotImposterMaterial
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lothighlight-residential"
+   addParam highlightAlpha 0.5
+end
+
+materialDefinition DefaultCommunityLotImposterMaterial
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lothighlight-community"
+   addParam highlightAlpha 0.5
+end
+
+
+# Material used in creating a terrain thumbnail for a lot for which no imposter exists yet.
+materialDefinition DefaultLotThumbnailMaterial 
+   setDefinition StandardMaterial
+   addParam stdMatBaseTextureEnabled "true"
+   addParam stdMatBaseTextureName "lotselection-done"
+   addParam stdMatLightingEnabled true
+   addParam stdMatDiffCoef (1, 1, 1)
+end
+
+materialDefinition bridge_sides
+#   setDefinition StandardMaterial
+   setDefinition PartiallyUnderWaterMaterial
+   addParam stdMatAlphaBlendMode none
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName bridge-sides
+   addParam stdMatDiffCoef (0.8, 0.8, 0.8)
+   addParam stdMatIsPartlyUnderwater true
+end
+
+materialDefinition cliff_boulder_material
+#   setDefinition StandardMaterial
+   setDefinition PartiallyUnderWaterMaterial
+   addParam stdMatAlphaBlendMode none
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName nh-test-cliff
+   addParam stdMatDiffCoef (0.8, 0.8, 0.8)
+   addParam stdMatIsPartlyUnderwater true
+end
+
+materialDefinition plesiosaur_skin_material
+#   setDefinition StandardMaterial
+   setDefinition PartiallyUnderWaterMaterial
+   addParam stdMatAlphaBlendMode none
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName plesiosaur-skin
+   addParam stdMatDiffCoef (0.8, 0.8, 0.8)
+   addParam stdMatIsPartlyUnderwater true
+   
+   # these are mvoing objects, need to be at or above layer 0
+   addParam nhoodCanvasLayer -4
+   
+end
+
+materialDefinition neighborhood_bouyside_material
+#   setDefinition StandardMaterial
+   setDefinition PartiallyUnderWaterMaterial
+   addParam stdMatAlphaBlendMode none
+   addParam stdMatBaseTextureEnabled true
+   addParam stdMatBaseTextureName neighborhood_bouyside
+   addParam stdMatDiffCoef (0.8, 0.8, 0.8)
+   addParam stdMatIsPartlyUnderwater true
+   
+   # these are mvoing objects, need to be at or above layer 0
+   addParam nhoodCanvasLayer -4
+end
+
+
+materialDefinition RelationshipArchGreen
+   setDefinition StandardMaterial
+   addParam   stdMatSpecPower 20
+   addParam   stdMatDiffCoef (0.3, 1, 0.3)
+   addParam   stdMatSpecCoef (1, 1, 1)
+   addParam   stdMatAlphaMultiplier 0.6
+   addParam   stdMatAlphaBlendMode blend
+end
+
+materialDefinition housePlacementOKHighlight
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lotselection-good"
+   addParam highlightAlpha 0.15
+end
+ 
+materialDefinition housePlacementNotOKHighlight
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lotselection-bad"
+   addParam highlightAlpha 0.15
+end
+
+materialDefinition roadIndicatorOK
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lothighlight-roadghost-good"
+   addParam highlightAlpha 0.75
+end
+
+materialDefinition roadIndicatorNotOK
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lothighlight-roadghost-bad"
+   addParam highlightAlpha 0.75
+end
+
+materialDefinition DefaultLotHighlight
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lotselection-good"
+   addParam highlightAlpha 0.25
+end
+
+materialDefinition ResidentialLotHighlight
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lothighlight-residential"
+   addParam highlightAlpha 0.40
+end
+
+materialDefinition CommunityLotHighlight
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lothighlight-community"
+   addParam highlightAlpha 0.40
+end
+
+materialDefinition DormLotHighlight
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lothighlight-dorm"
+   addParam highlightAlpha 0.40
+end
+
+materialDefinition NotOKLotHighlight
+   setDefinition NHoodTerrainHighlightMaterial
+   addParam highlightTexture "lotselection-bad"
+   addParam highlightAlpha 0.40
+end
+
+materialDefinition neighborhoodbuildingres1_windows_night
+   setDefinition NeighborhoodBuildingMaterial
+   addParam texMaterial neighborhoodbuildingres1_repeat-surface-night
+   addParam showOnDay false
+end
+
+materialDefinition neighborhoodbuildingres1_windows_day
+   setDefinition NeighborhoodBuildingMaterial
+   addParam texMaterial neighborhoodbuildingres1_repeat-surface 
+   addParam showOnDay true
+end
+
+# this is commented out because the UI renders this without use of the material
+#materialDefinition ZoomConePyramid
+#   setDefinition ZoomConeMaterial
+#   addParam baseColor (1.0, 1.0, 1.0, 0.5)
+#end
+
+define LotSkirtPSWater()
+    shader -layer ($poolWaterLayer+1)
+        validateRenderShaderContext -vertexFormat position 0 required
+		pass -clipAlways -modifiedEachFrameHint
+			#fillmode wireframe
+			alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+		seti textureLights (numLightsOfType(environmentCube))  
+		depthTest true -enableDepthWrite false          
+	   
+			shaderProgram -target vertexProgram -method compile -version 1_1
+
+				bindConstants 0 -bindingID geomToClip -constantCount 4
+				bindConstants 4 -bindingID geomToCamera -constantCount 3
+
+				bindConstants 7 -bindingID frameInfo 
+
+				bindConstants 11 -bindingID immediateData -data ($wmXRepeat, 0, $wmXWaveHeight, $wmXSpeed)
+				bindConstants 12 -bindingID immediateData -data (0, $wmYRepeat, $wmYWaveHeight, $wmYSpeed)
+
+				# pre-evaluate these
+				setf xscale (-$wmXRepeat * $wmXWaveHeight)
+				setf yscale (-$wmYRepeat * $wmYWaveHeight)
+				bindConstants 13 -bindingID immediateData -data ($xscale,$yscale, 1,0)
+				bindConstants 14 -bindingID allStandardLightData -constantCount 4 -constantType float
+				bindConstants 18 -bindingID cameraToGlobal -constantCount 3
+				bindConstants 21 -bindingID cameraToGeom -constantCount 3
+				
+				if (tsIsDay)      
+					bindConstants 25 -bindingID immediateData -data (0.75, 0.75, 0.75, 1)
+					bindConstants 28 -bindingID immediateData -data (-0.3, 0.1, 0.1, 0.0)        
+				else
+					bindConstants 25 -bindingID immediateData -data (0.2, 0.2, 0.2, 1)
+					bindConstants 28 -bindingID immediateData -data (-0.3, -0.2, -0.1, 0.0)       
+				endif
+
+				shaderSource
+
+					float4 frameInfo : register(c7);
+					float4 waveDataX : register(c11);
+					float4 waveDataY : register(c12);
+					float4 waveDataHelper : register(c13);
+					float4x4 clipSpaceMatrix : register(c0);
+					float4x3 cameraSpaceMatrix : register(c4);
+					float4x3 cameraToGlobalMatrix : register(c18);
+					float4x3 cameraToGeomMatrix : register(c21);
+					
+					float4 nightColor: register(c25);
+					float4 waterTint: register(c28);
+	            
+					float4 lightDirection : register(c14);
+					float4 lightColor : register(c15);
+					float4 lightSpecular : register(c16);
+					
+					const static float4 refractionWeights={1,1,2,0};
+					const static float4 layerBlue={1.0, 1.0, 1.0, 1.0};
+					
+					struct InputVertex
+					{
+						float3 position: POSITION0;
+						float3 normal : NORMAL0;
+						float2 alpha  : TEXCOORD1;
+					};
+					
+					struct OutputVertex
+					{
+						float4 clipPosition : POSITION;					
+						float4 sPos         : TEXCOORD0;					
+						float2 Wave0        : TEXCOORD1;
+						float2 Wave1        : TEXCOORD2;
+						float2 Wave2        : TEXCOORD3;
+						float2 Wave3        : TEXCOORD4;
+						float3 Eye          : TEXCOORD5;
+						float4 specular     : COLOR0;   
+						float4 colorTint    : COLOR1;
+					};
+	            
+			
+			
+					OutputVertex VertexMain( InputVertex inputVertex)
+					{
+						// Do	Y-direction	waves
+						// r0	= (x, y, z,	t)
+						
+						OutputVertex outputVertex;
+						
+						float4 posAndTime;
+						posAndTime.xyz = inputVertex.position;
+						posAndTime.w = frameInfo.w;
+						
+						float temp = dot(posAndTime, waveDataX);					
+						float z = sin(temp) * waveDataX.z + inputVertex.position.z;															
+						temp = dot(posAndTime, waveDataY);										
+						posAndTime.z =  z + sin(temp) * waveDataY.z ;//-0.1f;	//The -.01 is a fudge factor to remove some of the edge creep associated with moving the height of the wave. -tom
+						posAndTime.w = 1.0f;					 
+											
+						outputVertex.clipPosition = mul( posAndTime, clipSpaceMatrix);
+						outputVertex.sPos = float4(0.5f*(outputVertex.clipPosition.ww - outputVertex.clipPosition.xy), outputVertex.clipPosition.ww);					
+						
+						float3 waveNormal = normalize(inputVertex.normal + float3(cos(temp)*waveDataHelper.xy, 0));															
+						float3 cameraSpaceNormal = normalize(mul(waveNormal, cameraSpaceMatrix));					
+						float3 cameraSpacePosition = mul( posAndTime, cameraSpaceMatrix);					
+						float3 viewVector = normalize(-cameraSpacePosition);	
+						
+						float3 halfVector = normalize(viewVector + lightDirection);
+						outputVertex.specular = lightSpecular*pow(dot(cameraSpaceNormal, halfVector), 50)*nightColor*lightColor*0.5;									
+						
+						
+						float2 fTranslation=float2(fmod(frameInfo.w, 100)*0.005, fmod(frameInfo.w, 100)*0.005);
+						float2 vTexCoords = posAndTime.xy*0.05;
+			                
+						// Output bump layers texture coordinates    
+						float fSinTranslation=sin(fTranslation*100)*0.005;
+						float2 vTranslation0=fTranslation+fSinTranslation;
+						float2 vTranslation1=fTranslation-fSinTranslation;
+						float2 vTranslation2=fTranslation;
+			                
+						// Scale texture coordinates to get mix of low/high frequency details
+						outputVertex.Wave0.xy = vTexCoords.xy*0.01+fTranslation*2.0;
+						outputVertex.Wave1.xy = vTexCoords.xy+fTranslation*2.5;
+						outputVertex.Wave2.xy = vTexCoords.xy+fTranslation*-2.3;
+						outputVertex.Wave3.xy = vTexCoords.xy*0.1+fTranslation*1.5;                															
+		                  	                  
+						// compute binormal
+						float3 binormal = normalize(cross(waveNormal, float3(1.0f, 0.0f, 0.0f)));	            
+						float3 tangent = normalize(cross(binormal, waveNormal));
+			            
+						// tangent space matrix
+						float3x3 objToTangentSpace = float3x3(tangent, binormal, waveNormal);
+			            
+						float3 viewVectorInObjSpace = mul(viewVector, (float3x3)cameraToGeomMatrix);
+			            
+						outputVertex.Eye.xyz = mul(objToTangentSpace, viewVectorInObjSpace);
+						outputVertex.colorTint = waterTint;
+						outputVertex.colorTint.a = inputVertex.alpha.xxxx;
+						// outputVertex.color = waterTint.xxxx;
+															
+						return(outputVertex);					
+					}
+					
+				endShaderSource  
+			end # shaderProgram
+			
+			shaderProgram -target pixelProgram -method compile -version 2_0              
+			shaderSource                            
+				sampler reflect;  
+				sampler bump;          
+				struct cInputPixel
+				{               
+					float4 sPos         : TEXCOORD0;               
+					float2 Wave0        : TEXCOORD1;
+					float2 Wave1        : TEXCOORD2;
+					float2 Wave2        : TEXCOORD3;
+					float2 Wave3        : TEXCOORD4;
+					float3 Eye          : TEXCOORD5;
+					float4 specular     : COLOR0;
+					float4 colorTint    : COLOR1;
+				};
+	            
+				float Fresnel(float NdotL, float fresnelBias, float fresnelPow, float facing)
+				{               
+					return max(fresnelBias + (1.0f - fresnelBias)*pow(facing, fresnelPow), 0.0);
+				}
+	            
+				float4 PixelMain(cInputPixel pi) : COLOR
+				{         
+					float3 vEye = normalize(pi.Eye);
+
+					// Get bump layers
+					float3 vBumpTexA = tex2D(bump, pi.Wave0.xy).xyz;
+					float3 vBumpTexB = tex2D(bump, pi.Wave1.xy).xyz;
+					float3 vBumpTexC = tex2D(bump, pi.Wave2.xy).xyz;
+					float3 vBumpTexD = tex2D(bump, pi.Wave3.xy).xyz;
+		                 
+					// Average bump layers
+					float3 vBumpTex=normalize(2.0 * (vBumpTexA.xyz + vBumpTexB.xyz + vBumpTexC.xyz + vBumpTexD.xyz)-4.0);
+		                 
+					// Apply individual bump scale for refraction and reflection                 
+					float3 vReflBump = vBumpTex.xyz ;
+					float4 vReflection = tex2Dproj(reflect, pi.sPos + float4(vReflBump.xy, 0.0f, 0.0f));//*0.001 + float4(2.0*vBumpTexD-1.0f.xxx, 1);
+		               
+					// Compute Fresnel term
+					float NdotL = max(dot(vEye, vReflBump), 0);
+					float facing = (1.0 - NdotL);
+					float fresnel = Fresnel(NdotL, 0.1, 0.5, facing);
+					           
+					vReflection.a = fresnel * 0.5;
+					
+					return saturate(vReflection + pi.colorTint);
+				}
+			endShaderSource
+		end                                                     
+	      
+		sampler reflect
+			texture "OceanReflection"
+			textureAddressing clamp clamp
+		end		
+	      
+		sampler bump
+			texture "poolShape-body-bump"
+			textureAddressing tile tile
+		end   
+	            
+		end # end pass
+	end
+enddef
+
+define LotSkirtWater()
+	material      
+		create DetermineHardwareSupport()
+
+		if ($useHWShader2Path)
+			create LotSkirtPSWater()
+		else
+   
+			shader -layer $nhoodWaterLayer
+				validateRenderShaderContext -vertexFormat  position      0 required
+				validateRenderShaderContext -vertexFormat  normal        0 required
+				validateRenderShaderContext -vertexFormat  texcoord      0 required
+				viewerRenderTypePred viewerRenderType
+			            
+				pass -fixedFunction
+			    
+					alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+					colorScalar $lotSkirtWaterReflColour 0.50
+					depthTest true -enableDepthWrite false                        
+				    
+					#tring to remove warble I think it may be caused by depth bias.
+					#ffDepthOffset -2
+				    
+					stage
+						ffTextureCoordsSource fromPosition
+						ffTextureMatrix -cameraToClip -scalev ((-0.5 * $ratioW), (-0.5 * $ratioH)) -trans (0.5, 0.5)
+						textureAddressing clamp clamp
+						texture "ScreenReflection"
+				        
+						textureBlend multiply(texture colorScalar) multiply(diffuse colorScalar) 
+					end                
+			                
+				end
+			end     
+		endif 
+   end
+enddef
+
+define LotSkirtWaterNoReflection()
+   material
+      # fallback: no reflection.
+      shader -layer ($nhoodWaterLayer)
+         viewerRenderTypePred viewerRenderType
+         
+         create DetermineHardwareSupport()
+         
+         pass -fixedFunction
+			   # For now, we are diabling the lighting since we simply want to use the vertex colors.
+			   create LightingStatesNoStdLightsParam(false true)
+			   alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+   			
+            colorScalar (.4, .6, .9, .4)      
+            
+            #tring to remove warble I think it may be caused by depth bias.
+            #ffDepthOffset -2                              
+            
+            fillmode $stdMatFillMode
+            stage
+               #texture reflectionoutdoorwater-envcube
+               if ($cubeMapSupport)
+                  texture $skyboxCubeMap
+                  textureMIPFilterHint disabled
+
+                  ffTextureCoordsSource fromReflectionVector
+                  ffTextureMatrix -orientCameraToGlobal
+
+                  textureAddressing clamp clamp clamp
+                  textureBlend multiply(texture colorScalar) select(colorScalar)
+               else
+                  textureBlend select(colorScalar) multiply(diffuse colorScalar)
+               endif
+            end  
+         end   
+      end
+   end               
+enddef
+
+materialDefinition lotSkirtSea
+   setDefinition LotSkirtWater  
+   addParam stdMatLightingEnabled false
+   addParam stdMatLayer 0
+   
+   addParam stdMatDiffCoef (1, 1, 1)   
+
+   addParam wmReflectionTexture swimming_pool-envcube
+
+   addParam wmTransparency 0.4
+
+   addParam wmXSpeed        3
+   addParam wmXRepeat       5
+   addParam wmXWaveHeight   0.001 
+   
+   addParam wmYSpeed        3
+   addParam wmYRepeat       6
+   addParam wmYWaveHeight   0.001 
+  
+end
+
+materialDefinition lotSkirtSeaNoReflection
+   setDefinition LotSkirtWaterNoReflection   
+end

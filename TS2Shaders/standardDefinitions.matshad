@@ -1,0 +1,386 @@
+# --- Predefined constants --------------------------------------------------------
+
+# colors
+setc white	(1,	1,	 1)
+setc black	(0,	0,	 0)
+setc red	(1,	0,	 0)
+setc green	(0,	1,	 0)
+setc blue	(0,	0,	 1)
+setc yellow	(1,	1,	 0)
+setc cyan	(0,	1,	 1)
+setc purple	(1,	0,	 1)
+setc orange	(1,	0.5, 0)
+
+# default textures
+set	defaultWhiteA1Texture DefaultWhiteA1Texture
+
+# render types
+seti kRenderTypeNormal		      0
+seti kRenderTypeShadow		      1
+seti kRenderTypeReflection	      2
+seti kRenderTypeMirror		      3
+seti kRenderTypeImposter	      4
+seti kRenderTypeNormalStencil    5
+seti kRenderTypeShadowMap        6
+seti kRenderTypePoolReflection	7
+seti kRenderTypeShadowBlur 8
+seti kRenderTypeOceanReflection 9
+seti kRenderTypeCensorInMirror  10
+seti kRenderTypeThumbnail       11 
+seti kViewerRenderTypeCensor    12
+seti kViewerRenderTypeFamilyThumbnail 13
+seti kRenderTypeMIPDebug	     15
+seti kMaxRenderTypes		        16
+
+# special lights
+set	kShapeColorLight user0 # Forces	application	of shape colour
+set	kShadeLight		 user1 # Makes a shade colour available	via	color scalar, for use by
+						   # self-lit objects. (E.g. particles,	reflection maps...)
+set	kAdditiveLight	 user2 # Used to change	blend mode.	No material	dependency.
+set   kWeatherLight user5 # used for applying a snow pass on objects
+
+setb  mirrorReflectionsEnabled false
+
+
+# --- Macros --------------------------------------------------------
+
+#==============================================================================
+# Macros for setting the appropriate predicates	to ensure that new shaders are
+# created when skinning	and	morphing are dynamically toggled
+
+
+
+
+
+
+define SetupSkinningStateAndPredicates()  
+ 
+	setb doSkinning	false
+ 
+	if (isEnabled(skinning)	and	hasVertexFormat(blendindices, 0))
+		setb doSkinning	true
+	else
+		setb doSkinning	false
+	endif
+   
+	if ($doSkinning)
+		validateRenderShaderContext	-vertexFormat blendindices 0 required
+	endif
+   
+	if (isEnabled(skinning))
+		validateRenderShaderContext	-flag skin required
+	else
+		validateRenderShaderContext	-flag skin unsupported
+
+	endif
+   
+enddef
+
+
+
+
+
+
+define SetupMorphingStateAndPredicates()
+   
+   seti	numPosMorphs 0
+   seti	numNormMorphs 0	
+   
+	if (isEnabled(morphing)	and	hasVertexFormat(targetindices, 0))
+		setb doMorphing	true
+		seti numPosMorphs  (vertexFormatRange(positiondelta) + 1)
+		seti numNormMorphs (vertexFormatRange(normaldelta)	 + 1)
+		
+		if ($numPosMorphs =	0)
+			setb doMorphing	false
+		endif
+		
+   else
+		setb doMorphing	false
+		seti numPosMorphs  0
+		seti numNormMorphs 0
+   endif  
+
+   
+   if ($doMorphing)
+	  validateRenderShaderContext -vertexFormat	targetindices 0	required
+
+	if ($numPosMorphs =	1)
+		validateRenderShaderContext	-vertexFormat positiondelta	0 required
+		validateRenderShaderContext	-vertexFormat positiondelta	(1,3) unsupported
+	endif
+	
+	if ($numPosMorphs =	2)
+		validateRenderShaderContext	-vertexFormat positiondelta	(0,2) required
+		validateRenderShaderContext	-vertexFormat positiondelta	(2,2) unsupported
+	endif
+
+	if ($numPosMorphs =	3)
+		validateRenderShaderContext	-vertexFormat positiondelta	(0,3) required
+		validateRenderShaderContext	-vertexFormat positiondelta	3 unsupported
+	endif
+	
+	if ($numPosMorphs =	4)
+		validateRenderShaderContext	-vertexFormat positiondelta	(0,4) required
+	endif
+	
+	
+	if ($numNormMorphs = 1)
+		validateRenderShaderContext	-vertexFormat normaldelta 0	required
+		validateRenderShaderContext	-vertexFormat normaldelta (1,3)	unsupported
+	endif
+	
+	if ($numNormMorphs = 2)
+		validateRenderShaderContext	-vertexFormat normaldelta (0,2)	required
+		validateRenderShaderContext	-vertexFormat normaldelta (2,2)	unsupported
+	endif
+
+	if ($numNormMorphs = 3)
+		validateRenderShaderContext	-vertexFormat normaldelta (0,3)	required
+		validateRenderShaderContext	-vertexFormat normaldelta 3	unsupported
+	endif
+	
+	if ($numNormMorphs = 4)
+		validateRenderShaderContext	-vertexFormat normaldelta (0,4)	required
+	endif
+	
+	
+   elseif (isEnabled(morphing))	  
+		validateRenderShaderContext	-vertexFormat targetindices	0 unsupported
+   endif
+   
+   if (isEnabled(morphing))
+		validateRenderShaderContext	-flag morph	required
+
+	  flagPred morph true
+   else
+		validateRenderShaderContext	-flag morph	unsupported
+	  #flagPred	morph false
+   endif
+   
+enddef
+
+define SupportedRenderShaderContextFFPredicates()
+   # we create new fixed-function shaders for each combination of the following conditions:
+   # number of directional lights = or > 0, number of point lights = or > 0, number of spot lights = or > 0.
+   # There are 8 combinations.
+   set nd (numLightsOfType(directional))
+   set np (numLightsOfType(point))
+   set ns (numLightsOfType(spot))
+      
+   # 000
+   if ($nd = 0 and $np = 0 and $ns = 0)
+      supportedRenderShaderContexts -lightCounts directional (0,0) point (0,0) spot (0,0)
+      
+   # 001
+   elseif ($nd = 0 and $np = 0 and $ns > 0)      
+      supportedRenderShaderContexts -lightCounts directional (0,0) point (0,0) spot (1,8)
+      
+   # 010
+   elseif ($nd = 0 and $np > 0 and $ns = 0)
+      supportedRenderShaderContexts -lightCounts directional (0,0) point (1,8) spot (0,0)
+      
+   # 011
+   elseif ($nd = 0 and $np > 0 and $ns > 0)
+      supportedRenderShaderContexts -lightCounts directional (0,0) point (1,8) spot (1,8)
+      
+   # 100
+   elseif ($nd > 0 and $np = 0 and $ns = 0)
+      supportedRenderShaderContexts -lightCounts directional (1,8) point (0,0) spot (0,0)
+      
+   # 101
+   elseif ($nd > 0 and $np = 0 and $ns > 0)      
+      supportedRenderShaderContexts -lightCounts directional (1,8) point (0,0) spot (1,8)
+      
+   # 110
+   elseif ($nd > 0 and $np > 0 and $ns = 0)
+      supportedRenderShaderContexts -lightCounts directional (1,8) point (1,8) spot (0,0)
+      
+   # 111   
+   else
+      supportedRenderShaderContexts -lightCounts directional (1,8) point (1,8) spot (1,8)     
+   endif      
+enddef
+
+
+#==============================================================================
+# enable standard lights
+# disable normalize	normals
+# enable local viewer for specular highlights (only)
+define LightingStates()
+   ffLighting -enable $stdMatLightingEnabled -localViewer ($stdMatSpecPower	!= 0) -normalizeNormals	false
+   create NonStandardLighting()
+enddef
+
+# enable standard lights
+# enable/disable normalize normals
+# enable local viewer for specular highlights (only) or	force local	viewer on
+define LightingStatesParam(doNormalize doForceLocalViewer)
+   ffLighting -enable $stdMatLightingEnabled -localViewer ($stdMatSpecPower	!= 0 or	&doForceLocalViewer) -normalizeNormals &doNormalize
+   create NonStandardLighting()
+enddef
+
+# disable standard lights (only)
+# disable normalize	normals
+define LightingStatesNoStdLights()
+   ffLighting -enable false	-normalizeNormals false	-localViewer false
+   create NonStandardLighting()
+enddef
+
+# disable standard lights (only)
+# enable/disable normalize normals
+# enable/disable local viewer
+define LightingStatesNoStdLightsParam(doNormalize doLocalViewer)
+   ffLighting -enable false	-normalizeNormals &doNormalize -localViewer	&doLocalViewer
+   create NonStandardLighting()
+enddef
+
+define NonStandardLighting()
+   validateRenderShaderContext -numLights drawState	  (numLightsOfType(drawState))
+   validateRenderShaderContext -numLights linearFog	  (numLightsOfType(linearFog))	 
+   validateRenderShaderContext -numLights $kShapeColorLight (numLightsOfType(${kShapeColorLight}))
+   validateRenderShaderContext -numLights $kAdditiveLight (numLightsOfType(${kAdditiveLight}))
+   
+   if (numLightsOfType(drawState) != 0)
+	  nonStandardLight drawState 0
+   endif
+
+   if (numLightsOfType(linearFog) != 0)
+	  nonStandardLight linearFog 0
+   endif
+   
+   if (numLightsOfType(${kAdditiveLight}) != 0)
+	  tsUserLight additiveLight 0
+   endif
+   
+   # the shade light must be more selectively applied.
+   # the remaining non-standard	lights don't need shader controllers.
+enddef
+
+#==============================================================================
+# Macro	for	setting	alpha blending and alpha test state	for	standard materials.
+
+set	stdMatDstFactor_blend	 invSrcAlpha
+set	stdMatDstFactor_additive one
+
+define StandardShaderFBAlphaState(alphaBlendMode)
+
+
+   if (strcmp("&{alphaBlendMode}", "none") != 0)
+      depthTest	true -enableDepthWrite false
+   endif
+   
+   # just like photoshop's "Normal" mode in the layer panel, alpha is a transparency/opacity control.
+   if (strcmp("&{alphaBlendMode}", "blend") = 0)
+	  alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+   endif
+   
+   # doesn't play well with thumbnail compositing
+   if (strcmp("&{alphaBlendMode}", "additive") = 0)
+	  alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+   endif
+      
+   # Useful for glows/light splash that need to be composited onto other things, like thumbnails.
+   if (strcmp("&{alphaBlendMode}", "addNoSrcAlphaScale") = 0)
+	  alphaBlend srcFactor(one) add dstFactor(one)
+   endif
+   
+   alphaTest $stdMatAlphaTestEnabled $stdMatAlphaRefValue
+   alphaTestFunction acceptIfGreaterOrEqual
+enddef
+
+
+#==============================================================================
+# Macros for setting texture stage state for standard materials.
+
+define StandardShaderTextureState(type)
+   texture $stdMat&{type}TextureName ${stdMat&{type}TextureParam}
+   ffTextureCoordsSource 0
+   textureAddressing $stdMat&{type}TextureAddressingU $stdMat&{type}TextureAddressingV $stdMat&{type}TextureAddressingW
+
+   if (strcmp("${stdMatTextureCoordAnimMode}", "tile") = 0)
+	  textureTileAnimation	$stdMatTextureCoordTileAnimSpeed -tiles	$stdMatTextureCoordAnimNumTiles	-targetType	fixedFunction
+   elseif (strcmp("${stdMatTextureCoordAnimMode}", "transform")	= 0)
+	  textureMatrixAnimation -targetType fixedFunction -aorigin	$stdMatTextureCoordTfAnimOrigin	-arot $stdMatTextureCoordTfAnimRotWaveform $stdMatTextureCoordTfAnimRotSpeed 0 $stdMatTextureCoordTfAnimRotStartEnd	-ascale	$stdMatTextureCoordTfAnimScaleWaveform $stdMatTextureCoordTfAnimScaleSpeed 0 $stdMatTextureCoordTfAnimScaleStartEnd	-atrans	$stdMatTextureCoordTfAnimTransWaveform $stdMatTextureCoordTfAnimTransSpeed 0 $stdMatTextureCoordTfAnimTransStart $stdMatTextureCoordTfAnimTransEnd
+   elseif (strcmp("${stdMatTextureCoordAnimMode}", "video")	= 0)
+	  trace("+++++++++++++++++++++++++++++++++++++++++++++\n")
+	  sendNotifyString $shaderNotifyString
+   endif
+enddef
+
+
+#==============================================================================
+define StandardShaderEnvCubeMapState(texCoordSource)
+   texture $stdMatEnvCubeTextureName
+
+   textureMIPFilterHint	linear $stdMatEnvCubeBlurFactor
+
+   ffTextureCoordsSource &texCoordSource
+   textureTransformType	vector3
+   if (not $stdMatEnvCubeLockedToCamera)
+	  ffTextureMatrix -orientCameraToGlobal
+   endif
+   
+   textureAddressing clamp clamp clamp
+enddef
+
+
+#==============================================================================
+define AttenuatedMatCoef(scale)
+   ffMatCoef -amb ($stdMatDiffCoef * (&scale, 1).xxxy) -diff ($stdMatDiffCoef *	(&scale, 1).xxxy) -emit	($stdMatEmissiveCoef * (&scale,	1).xxxy) -spec $stdMatSpecCoef -specPow	$stdMatSpecPower
+
+   if ($stdMatSpecPower	!= 0)
+	  addSpecular true
+   endif
+enddef
+
+
+#==============================================================================
+# Special purpose definitions for visualizing error conditions in shaders or
+# material bindings.
+define VisualizeValidationFailure()
+   material
+     create VisualizeErrorStateShader((1,0,0))
+   end
+enddef
+
+define VisualizeUnknownMaterialNameError()
+   material
+     create VisualizeErrorStateShader((0,0,1))
+   end
+enddef
+
+define VisualizeParseMaterialFailure()
+   material
+     create VisualizeErrorStateShader((1,0,1))
+   end
+enddef
+
+define VisualizeInconsistentSupportedRenderShaderContexts()
+   material
+     create VisualizeErrorStateShader((1,1,0))
+   end
+enddef
+
+define VisualizeErrorStateShader(color)
+   shader -ignoreDefaultState
+      pass -modifiedEachFrameHint
+         shaderProgram -target vertexProgram -method assemble
+            bindConstants 0 -bindingID geomToClip -constantCount 4
+
+            shaderSource
+               vs_1_1
+               dcl_position v0
+
+               m4x4  oPos, v0, c0
+            endShaderSource
+         end
+
+         colorScalar &color -animAlpha triangular (rnd(0.5, 2)) 0 (0,1)
+
+         stage
+            textureBlend multiply(colorScalar colorScalar:alphaReplicate) select(colorScalar)
+         end
+      end
+   end
+enddef

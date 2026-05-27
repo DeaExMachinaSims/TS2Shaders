@@ -1,0 +1,228 @@
+# lightning shaders
+#
+# contributors :  bpt 09-25-02
+#           
+
+define LightningIonization()
+   material
+      attributes
+         attribute ionizationRGB   float3
+         attribute ionizationAlpha float1
+      end
+
+      shader -layer (13 * 18 + 17)
+         vertexFormatPred position     0 true
+         vertexFormatPred normal        0 true
+         vertexFormatPred texcoord      0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLightsParam(true false)
+            alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+            depthTest true -enableDepthWrite false
+            ffMatCoef -amb (1,1,1) -diff (1,1,1) -emit (0,0,0) -spec (0,0,0) -specPow 0
+            colorScalar @ionizationRGB @ionizationAlpha
+            fillmode $stdMatFillMode
+
+            stage
+               texture $stdMatEnvCubeTextureName -alphaFalloffCubeMap 32 (-1, 0, 0) ($lightningCubeMapMin, $lightningCubeMapMax) $lightningCubeMapExponent
+               textureMIPFilterHint disabled
+
+               ffTextureCoordsSource fromNormal
+               textureTransformType vector3
+
+               ffTextureMatrix -orientToCamera
+               
+               textureAddressing clamp clamp clamp
+
+               # choose diffuse vertex color supplied by model
+               # use alpha channel from cube map texture lookup
+               textureBlend addSigned(diffuse texture:alphaReplicate) select(texture)
+               
+               # debugging to show alpha channel
+               # textureBlend select(texture:alphaReplicate) select(texture)
+               # textureBlend select(colorScalar) select(colorScalar)
+            end 
+         end
+      end
+      # fallback to geometry specified properties
+      shader -layer ($stdMatLayer * 18 + 17)
+         vertexFormatPred position 0 true
+         vertexFormatPred texcoord 0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+            depthTest true -enableDepthWrite false
+            colorScalar $stdMatDiffCoef
+            fillmode $stdMatFillMode
+
+            stage
+              textureBlend select(diffuse) select(diffuse)
+            end 
+         end
+      end
+   end
+enddef
+
+
+define LightningGlow()
+   material
+      attributes
+         attribute glowRGB float3
+         attribute glowAlpha float1
+      end
+
+      shader -layer (14 * 18 + 16)
+         vertexFormatPred position      0 true
+         vertexFormatPred normal        0 true
+         vertexFormatPred texcoord      0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLightsParam(true false)
+            alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+            depthTest true -enableDepthWrite false
+            ffMatCoef -amb (1,1,1) -diff (1,1,1) -emit (0,0,0) -spec (0,0,0) -specPow 0
+            colorScalar @glowRGB @glowAlpha
+            fillmode $stdMatFillMode
+
+            stage
+               texture $stdMatEnvCubeTextureName -alphaFalloffCubeMap 32 (-1, 0, 0) ($lightningCubeMapMin, $lightningCubeMapMax) $lightningCubeMapExponent
+
+               textureMIPFilterHint disabled
+
+               ffTextureCoordsSource fromNormal
+               textureTransformType vector3               
+
+               ffTextureMatrix -orientToCamera
+               
+               textureAddressing clamp clamp clamp
+
+               # choose diffuse vertex color supplied by model
+               # use alpha channel from cube map texture lookup
+               textureBlend addSigned(diffuse texture:alphaReplicate) select(texture)
+               
+               # debugging to show alpha channel
+               # textureBlend select(texture:alphaReplicate) select(texture)
+            end 
+         end
+      end
+      # fallback to geometry specified properties
+      shader -layer ($stdMatLayer * 18 + 17)
+         vertexFormatPred position 0 true
+         vertexFormatPred texcoord 0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+            depthTest true -enableDepthWrite false
+            colorScalar $stdMatDiffCoef
+            fillmode $stdMatFillMode
+
+            stage
+               textureBlend select(diffuse) select(diffuse)
+            end 
+         end
+      end
+   end
+enddef
+
+ 
+define LightningCore()
+   material
+      attributes
+         attribute coreRGB float3
+         attribute coreAlpha float1
+      end
+
+      shader -layer (15 * 18 + 17)
+         vertexFormatPred position      0 true
+         vertexFormatPred normal        0 true
+         vertexFormatPred texcoord      0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLightsParam(true false)
+            alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+            depthTest true -enableDepthWrite false
+            ffMatCoef -amb (1,1,1) -diff (1,1,1) -emit (0,0,0) -spec (0,0,0) -specPow 0
+            colorScalar @coreRGB @coreAlpha
+            fillmode $stdMatFillMode
+
+            stage
+               texture $stdMatEnvCubeTextureName -alphaFalloffCubeMap 32 (-1, 0, 0) ($lightningCubeMapMin, $lightningCubeMapMax) $lightningCubeMapExponent
+
+               textureMIPFilterHint disabled
+
+               ffTextureCoordsSource fromNormal
+               textureTransformType vector3               
+
+               ffTextureMatrix -orientToCamera
+               
+               textureAddressing clamp clamp clamp
+
+               # choose diffuse vertex color supplied by model
+               # use alpha channel from cube map texture lookup
+               textureBlend addSigned(diffuse texture:alphaReplicate) select(texture)
+               
+               # debugging to show alpha channel
+               # textureBlend select(texture:alphaReplicate) select(texture)
+            end 
+         end
+      end
+      # fallback to geometry specified properties
+      shader -layer ($stdMatLayer * 18 + 17)
+         vertexFormatPred position 0 true
+         vertexFormatPred texcoord 0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+            depthTest true -enableDepthWrite false
+            colorScalar $stdMatDiffCoef
+            fillmode $stdMatFillMode
+
+            stage
+               textureBlend select(diffuse) select(diffuse)
+            end 
+         end
+      end
+   end
+enddef
+
+materialDefinition lightning_ionization
+   addParam stdMatEnvCubeTextureName lightning_ionization_alphaFalloff
+   addParam stdMatLayer 7
+   addParam lightningCubeMapExponent 1
+   addParam lightningCubeMapMin 60
+   addParam lightningCubeMapMax 0
+   setDefinition LightningIonization
+end
+
+materialDefinition lightning_glow
+   addParam  stdMatEnvCubeTextureName lightning_glow_alphaFalloff
+   addParam stdMatLayer 9
+   addParam lightningCubeMapExponent 1
+   addParam lightningCubeMapMin 100
+   addParam lightningCubeMapMax 0
+   setDefinition LightningGlow
+end
+
+materialDefinition lightning_core
+   addParam  stdMatEnvCubeTextureName lightning_core_alphaFalloff
+   addParam stdMatLayer 11
+   addParam lightningCubeMapExponent 1
+   addParam lightningCubeMapMin 512
+   addParam lightningCubeMapMax -512
+   setDefinition LightningCore
+end

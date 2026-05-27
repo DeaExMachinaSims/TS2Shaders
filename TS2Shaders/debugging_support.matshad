@@ -1,0 +1,6 @@
+#
+# Debugging support
+#
+
+# shader validation
+verboseShaderValidation false

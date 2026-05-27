@@ -1,0 +1,187 @@
+#
+# Materials for overlays. These include decals and outdoor 
+# object shadows.
+#
+
+
+# OverlayMaterialDef parameters
+setb overlayAdditive         0
+setb overlayModulate         0
+setb overlayInvertDepthTest  0
+setb overlayOverlapDepthTest 0
+
+setb lmIntegratedShadows 0    # just to avoid attribute errors due to material definitions at bottom.
+
+
+
+define OverlayMaterialDef()
+   material
+      # Layer -- we wish to be immediately *after*
+      # the terrain, floor, and water, but before any transparent
+      # materials. We avoid alpha sorting, because bounding box sorting isn't
+      # going to work for us.
+      shader -layer 2
+         vertexFormatPred position      0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         pass -fixedFunction
+            create LightingStatesNoStdLights()
+            fillmode $stdMatFillMode
+            
+            # can be overridden by code
+            if ($overlayAdditive)
+               alphaBlend srcFactor(srcAlpha) add dstFactor(one)
+            elseif ($overlayModulate)
+               alphaBlend srcFactor(destColor) add dstFactor(zero)
+            else
+               alphaBlend srcFactor(srcAlpha) add dstFactor(invSrcAlpha)
+            endif
+            
+            if ($overlayOverlapDepthTest)
+               depthTest true -enableDepthWrite true
+               depthTestFunction acceptIfLess
+               alphaTest true 128
+               alphaTestFunction acceptIfGreater
+            else
+               depthTest true -enableDepthWrite false
+               if ($overlayInvertDepthTest)
+                  depthTestFunction acceptIfGreater
+               else
+                  depthTestFunction acceptIfLessOrEqual
+               endif
+               
+               alphaTest true 0
+               alphaTestFunction acceptIfGreater
+            endif
+            
+            stage
+               # is overridden by code except in debug mode.
+               texture "reggrid2"
+               textureAddressing clamp clamp
+               textureBlend multiply(texture colorScalar) multiply(texture colorScalar)
+            end
+            # apply mask to prevent repeat off to infinity.
+            stage
+               texture overlayMask
+               textureFilterHint point point
+               textureAddressing clamp clamp
+               textureBlend select(outRegister) multiply(texture outRegister)
+            end
+         end
+      end
+   end
+enddef
+
+define OverlayShadowMaterialDef()
+   material
+      # Layer -- we wish to be immediately *after*
+      # the terrain, floor, and water, but before any transparent
+      # materials. We avoid alpha sorting, because bounding box sorting isn't
+      # going to work for us.
+      shader -layer 8
+         vertexFormatPred position      0 true
+         vertexFormatPred blendindices  0 false
+         vertexFormatPred targetindices 0 false
+
+         create DetermineHardwareSupport()
+         
+            pass -fixedFunction
+
+            create LightingStatesNoStdLights()
+            fillmode $stdMatFillMode
+            
+            alphaBlend srcFactor(zero) add dstFactor(srcColor)
+            
+            depthTest true -enableDepthWrite true
+            depthTestFunction acceptIfLess
+            alphaTest true 100
+            alphaTestFunction acceptIfGreater
+                                    
+            #stencilFunction acceptIfEqual -refValue 0
+            #stencilOperation -onPass incrementSaturate
+            
+            ffDepthOffset 1                        
+            
+            stage
+               texture "reggrid2"                        # is overridden by code except in debug mode.
+               textureAddressing clamp clamp
+               textureBlend select(colorScalar) multiply(texture colorScalar)
+            end
+            # apply mask to prevent repeat off to infinity.
+            stage
+               texture overlayMask
+               textureFilterHint point point
+               textureAddressing clamp clamp
+
+               # for our 'cheap' non-overlapping shadows, we simply use the blurring to avoid
+               # blockiness via the alpha test -- the entire shadow is the shadow colour.
+               textureBlend select(outRegister) multiply(texture outRegister)
+               # what you'd do for soft shadows: use shadow texture alpha to blend between 1, 1, 1 and the shadow colour.
+               #textureBlend lerpOutRegisterAlpha(outRegister texture) multiply(texture outRegister)   
+            end
+            if (not $lmIntegratedShadows and $isGround and ($useHWShader2Path or $useHWShader1Path))
+               stage
+                  if ($isGround)
+                     texture "floorLightMap_0"
+                     ffTextureCoordsSource fromPosition
+                     ffTextureMatrix -cameraToGlobal -scale (1/64)                     
+                  else
+                     texture "floorLightMap_0"
+                     ffTextureCoordsSource 0
+                  endif
+                  
+                  textureAddressing tile tile
+                  textureBlend lerpTextureAlpha(outRegister diffuse) select(outRegister)
+               end
+            endif
+         end
+      end
+   end
+enddef
+
+# The overlay manager references these materials by name.
+materialDefinition OverlayDecalMaterial
+   setDefinition OverlayMaterialDef
+end
+
+materialDefinition OverlayAdditiveMaterial
+   setDefinition OverlayMaterialDef
+   addParam overlayAdditive 1
+end
+
+materialDefinition OverlayModulateMaterial
+   setDefinition OverlayMaterialDef
+   addParam overlayModulate 1
+end
+
+materialDefinition OverlayDecalInverseDepthMaterial
+   setDefinition OverlayMaterialDef
+   addParam overlayInvertDepthTest 1
+end
+
+materialDefinition OverlayDrawNoOverlapMaterial
+   setDefinition OverlayMaterialDef
+   addParam overlayOverlapDepthTest 1
+end
+
+materialDefinition OverlayShadowMaterial
+   setDefinition OverlayShadowMaterialDef
+   addParam isGround 1
+end
+
+materialDefinition OverlayShadowFloorMaterial
+   setDefinition OverlayShadowMaterialDef
+   addParam isGround 0
+end
+
+materialDefinition OverlaySoftShadowMaterial
+   setDefinition Null
+end
+
+materialDefinition OverlayDebugMaterial
+   setDefinition SolidColorMaterial
+   addParam color (0.5, 0.0, 0.8, 0.5)
+   addParam solidMatAdditive true
+   addParam stdMatCullMode none
+end

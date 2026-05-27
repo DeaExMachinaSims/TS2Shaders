@@ -1,0 +1,416 @@
+
+
+# Support code for implementing StandardMaterial using a software vertex shader.
+
+define SoftwareVSPath()
+
+# A software VS will do all operations, multi-pass unfortunately will have to re-compute position (at least) in order to render.
+# but it will try to cram as much as possible into one pass if the hardware allows (like the intel 865)
+	if (viewerRenderType = $kRenderTypeShadow)
+		
+		create SoftwareVSShadow()
+		
+	else
+		create SoftwareVertexShaderRendering()
+		
+	endif
+	
+enddef
+
+
+
+define SoftwareVertexShaderRendering()
+
+
+# declare all variables used here
+	setb cutoutEnabled false
+	
+	
+	#trace "---------------------------"
+	#trace "SWVS: $currentMaterialName"
+
+	#local variable for lighting that can be overridden if no normals or lights exist.
+	seti lightingMode $kNoLighting     
+	
+   
+   seti stdMatShapeColorIndex -1
+   
+   
+	if (numLightsOfType(${kShapeColorLight}) !=	0)
+		seti stdMatShapeColorIndex 0		
+   endif
+   
+			
+         
+   
+		shader -layer ($stdMatLayer * 18 + $stdMatAddLayer + (strcmp("${stdMatAlphaBlendMode}", "none") = 0 ? 0 : 17))
+		
+			validateRenderShaderContext -vertexFormat position 0 required
+			validateRenderShaderContext -viewerRenderType  viewerRenderType
+			create SetupCommonHWShaderVariablesAndPredicates()
+
+			create DetermineLightingMode()
+			create CheckForSpecular()
+
+			# first pass is always the cutout shader in my case
+
+			if (strcmp("${stdMatCutoutTextureName}", "0") != 0)
+				# transform only (morph, skin)
+				# copy texture coords straight out.
+	
+				pass
+					create SoftwareVSCutoutPass()
+				end
+				
+				setb cutoutEnabled true
+			endif
+			
+			
+			
+			# the basic 'middle' pass
+			# morph, skin, copy tex coords, deal with cube maps, etc.
+			
+			if ($updateEachFrameFlag)
+         		pass -modifiedEachFrameHint
+			else
+				pass
+			endif
+         
+			fillmode $stdMatFillMode
+			cullmode $stdMatCullMode
+			create NonStandardLighting()
+
+				# now set Z state to leverage the pixels we just wrote (if alpha > 127)
+			if ($cutoutEnabled)
+				depthTest true -enableDepthWrite false
+				depthTestFunction acceptIfEqual
+				#alphaBlend srcFactor(invDestAlpha) add dstFactor(zero)
+			endif								
+			
+			if (not $cubeMapSupport)
+				set stdMatEnvCubeMode none
+			endif
+	
+			create SoftwareVSGeometryProcessing($lightingMode)
+			create FixedFunctionPixelProcessingForVS($stdMatEnvCubeMode $lightingMode)						
+		end
+			
+
+			# don't do this pass if lighting is off.
+		if ($lightingMode = $kFullLighting and $stdMatSpecPower != 0 and $stdMatSpecMaskTextureEnabled and $doSpecular)
+		
+			pass
+			
+				# since cutout was on, and state is reset each pass, I have to assure the state is still correct.
+				if ($cutoutEnabled)
+					depthTest true -enableDepthWrite false
+					depthTestFunction acceptIfEqual
+				endif
+			
+				create SoftwareVSSpecularMaskPass()
+				
+			end
+		
+		endif
+			
+		
+		
+	end # end standard rendering shader
+	
+	if ($appInDebugMode = false)
+	
+		shader
+			shader -layer ($stdMatLayer * 18 + $stdMatAddLayer + (strcmp("${stdMatAlphaBlendMode}", "none") = 0 ? 0 : 17))
+			
+			validateRenderShaderContext -vertexFormat position 0 required
+			validateRenderShaderContext -viewerRenderType  viewerRenderType
+			create SetupCommonHWShaderVariablesAndPredicates()
+			create DetermineLightingMode()
+
+			setb doSpecular false
+			
+			pass
+				
+				set stdMatEnvCubeMode none
+					
+				create SoftwareVSGeometryProcessing($lightingMode)
+				
+				stage
+					textureBlend select(diffuse) select(diffuse)
+				end
+			end
+				
+		end
+		
+	endif
+	
+	
+enddef
+
+
+
+
+
+
+define SoftwareVSCutoutPass()
+
+# since we don't give a rats ass what is written, might as well save a Framebuffer read on cards that 
+# optimize for dstFactor = zero case.
+
+	#alphaBlend srcFactor(zero) add dstFactor(invSrcAlpha)
+	
+	alphaTest true 127
+	
+	alphaTestFunction acceptIfGreater
+
+	fillmode $stdMatFillMode
+	create NonStandardLighting()
+
+	depthTest true -enableDepthWrite true
+	
+	shaderProgram -target vertexProgram -method link
+	
+	# constants for no-lighting case.
+	
+		create BindsForSoftwareVSTransforms($doSkinning $doMorphing)
+
+		#TransformFragments(skinFlag singleBone swvsFlag morphFlag positionMorphCount normalMorphCount normalFlag shaderVersion)
+
+		create TransformFragments($doSkinning $stdMatReduceBoneWeights true $doMorphing $numPosMorphs $numNormMorphs $stdMatLightingEnabled 2_x)
+
+#		create TransformFragments( $doSkinning false true $doMorphing $numPosMorphs $numNormMorphs false 2_x)
+				
+		# copies 2D texture coords straight out to t0.
+		shaderFragment NoTextureMagic2_x
+	end
+	
+	colorScalar (0,0,0) 1
+	
+	stage
+		texture $stdMatCutoutTextureName ${stdMatCutoutTextureParam}
+		textureAddressing $stdMatCutoutTextureAddressingU $stdMatCutoutTextureAddressingV
+		# only the alpha pipe really matters here, the color will go nowhere
+		# the alpha goes to the alpha tester, and will drop the pixel (or not)
+		
+		textureBlend select(colorScalar) select(texture)
+	end
+		
+enddef
+
+
+
+
+
+define SoftwareVSSpecularMaskPass()
+
+
+# I have to do transform, and only specular lighting.
+
+
+	shaderProgram -target vertexProgram -method link
+	
+	
+		# setup the constants here
+			
+		create BindsForSoftwareVSTransforms($doSkinning $doMorphing)
+		
+		
+		bindConstants 10 -bindingID allStandardLightData -constantCount 32
+		
+		# only specular material color, no ambient either.
+
+	    setv3 finalShaderSpecular (($stdMatSpecCoef).xyz)
+		set adjustedSpecular ($stdMatSpecPower * 0.75)
+		
+   		bindConstants 5 -bindingID immediateData -data ($finalShaderSpecular, $adjustedSpecular) -constantType float
+
+		# morph or skin if necessary, provide normals for lighting
+		create TransformFragments( $doSkinning $stdMatReduceBoneWeights true $doMorphing $numPosMorphs $numNormMorphs true 2_x)
+		
+		shaderFragment LightingSetup2_x
+
+		#shaderFragment CreateViewVector2_x
+		shaderFragment CreateReflectionVector2_x
+		
+		# no diffuse, but do specular
+		create StandardLightFragments(false true 2_x)
+	
+	# send specular result to the diffuse channel.
+		shaderFragment FinalizeSpecularToDiffuseOutput2_x
+	
+		shaderFragment NoTextureMagic2_x
+
+	end #end shader program
+	
+
+	
+	# specular is additive
+	
+    alphaBlend srcFactor(one) add dstFactor(one)
+    depthTest true -enableDepthWrite false
+
+
+	stage
+		texture $stdMatSpecMaskTextureName ${stdMatSpecMaskTextureParam}
+		textureAddressing $stdMatSpecMaskTextureAddressingU $stdMatSpecMaskTextureAddressingV $stdMatSpecMaskTextureAddressingW
+
+		# modulate the specular color (in the diffuse input pipe), by the texture (a mask)
+		
+		textureBlend multiply(diffuse texture:alphaReplicate) select(diffuse)
+    end
+	
+
+enddef
+
+
+
+
+define SoftwareVSShadow()
+
+	shader -layer ($stdMatLayer * 18 + $stdMatAddLayer + (strcmp("${stdMatAlphaBlendMode}", "none") = 0 ? 0 : 17))
+      vertexFormatPred position 0 true
+      
+      # normals not required at all here
+      #     vertexFormatPred normal   0 true
+      
+      
+      viewerRenderTypePred viewerRenderType
+         
+		setb doSkinning false
+		setb doMorphing false
+		seti numPosMorphs 0
+		seti numNormMorphs 0
+
+		create SetupSkinningStateAndPredicates()
+		create SetupMorphingStateAndPredicates()
+
+		pass
+		
+
+			shaderProgram -target vertexProgram -method link
+				
+				create BindsForSoftwareVSTransforms($doSkinning false)
+
+				# skinning as required, swvs, no morphing, no lighting, version
+				create TransformFragments($doSkinning true true false 0 0 false 2_x)
+				
+			end # end the shader program
+			
+			alphaBlend srcFactor(one) add dstFactor(zero)
+			colorScalar $stdMatShadowColor 1
+			
+			stage
+				textureBlend select(colorScalar) select(colorScalar)
+			end #end the stage
+	
+		end # end the pass
+	end # end the shader
+
+
+enddef
+
+
+
+
+define SoftwareVSGeometryProcessing(lightingMode)
+   setb texTransform false
+   
+	shaderProgram -target vertexProgram -method link 
+	
+		seti perPixelLightCount 0
+		
+		create BindsForSoftwareVSTransforms($doSkinning $doMorphing)
+		
+		create BindsForLighting(&lightingMode)
+
+		if ($doMorphing and $numPosMorphs = 0)
+			trace "Morphing enabled, but no position morphs exist!"
+			setb doMorphing false
+		endif
+
+      if (strcmp("${stdMatEnvCubeMode}", "none") != 0)
+         if (not $stdMatEnvCubeLockedToCamera)
+            bindConstants 11 -bindingID cameraToGlobal -constantCount 3 -constantType float
+         endif
+         
+      endif
+      
+      create VertexShaderTextureMatrixAnimation()
+      
+		create TransformFragments($doSkinning $stdMatReduceBoneWeights true $doMorphing $numPosMorphs $numNormMorphs $stdMatLightingEnabled 2_x)
+		
+		if (&lightingMode != $kNoLighting)
+			
+			if (&lightingMode = $kAmbientOnly)
+				shaderFragment AmbientLighting2_x
+			else
+				create StandardLightFragmentsSWVS($doSpecular 2_x)
+			endif
+			
+		else
+			shaderFragment NoLighting2_x
+		endif
+
+		if ($hasTexcoords)
+         if (strcmp("${stdMatTextureCoordAnimMode}", "transform") = 0)
+				setb texTransform true
+			endif
+	
+			if (strcmp("${stdMatTextureCoordAnimMode}", "tile") = 0)
+				setb texTransform true
+			endif
+
+			# do nothing for "video" mode.		
+
+			# any texture matrix animation uses this same fragment, only the binds are different.
+			if ($texTransform)
+				shaderFragment TextureMatrix2DTransformTex02_x
+			else
+            shaderFragment NoTextureMagic2_x
+         endif
+         
+      endif
+
+
+      
+		if (strcmp("${stdMatEnvCubeMode}", "reflection") = 0)
+			shaderFragment CreateReflectionVector2_x
+       		if (not $stdMatEnvCubeLockedToCamera)
+    			shaderFragment TexgenTransformedReflectionVector2_x
+			else
+				shaderFragment TexgenReflectionVector2_x
+			endif
+		endif
+		
+	end # end the shader program
+
+enddef
+
+
+
+
+define 	BindsForSoftwareVSTransforms(skinFlag morphFlag)
+
+	bindConstants 0 -bindingID cameraToClip -constantCount 4 -constantType float
+	bindConstants 4 -bindingID geomToClip -constantCount 4 -constantType float
+	bindConstants 8 -bindingID geomToCamera -constantCount 3 -constantType float
+
+	if (&morphFlag)
+		# in software, these are still 'wasteful', but we have constants to spare, so it's ok (and faster)
+		bindConstants 56 -bindingID morphWeights -constantCount 30 -startChannel w
+	endif
+
+	# enough for 60 bones.
+	if (&skinFlag) 
+		bindConstants 90 -bindingID posesToCamera -constantCount 180 -constantType float
+	endif
+
+
+	if (strcmp("${stdMatEnvCubeMode}", "reflection") = 0)
+		if (not $stdMatEnvCubeLockedToCamera)
+			bindConstants 253 -bindingID cameraToGlobal -constantCount 3
+		endif
+	endif
+   
+		
+enddef
